@@ -1,0 +1,8 @@
+# Normalise line endings in the repository to LF; working copies may use
+# native endings. Keeps diffs clean between Windows and the Linux build on
+# Vercel.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.docx binary
