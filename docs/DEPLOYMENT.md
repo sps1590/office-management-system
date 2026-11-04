@@ -21,6 +21,29 @@ reproduced or repaired.
 | Neon org | `org-fragrant-queen-99830599` — **managed by Vercel** |
 | Neon resource | `office-management-system-db`, region `sin1` (Singapore) |
 | GitHub | `sps1590/office-management-system`, connected for push-to-deploy |
+| **Production URL** | `https://office-management-system-sps-a983.vercel.app` |
+
+### Two things to know about the URL
+
+**Do not use `https://office-management-system.vercel.app`.** That bare
+subdomain belongs to an unrelated create-react-app owned by someone else —
+`.vercel.app` subdomains are global and first-come-first-served. It returns
+`200` for every path, so a smoke test pointed at it will appear to pass while
+testing a stranger's site. The team-scoped URL above is this project's.
+
+**Vercel Deployment Protection is currently ON**, so every request to the
+production URL redirects to Vercel SSO and the app is unreachable by the
+public. The deployment itself is healthy — verified with
+`npx vercel curl <url>`, which authenticates using the CLI session:
+
+```bash
+npx -y vercel@latest curl https://office-management-system-sps-a983.vercel.app/
+```
+
+To open it to the public: Vercel dashboard → the project → **Settings** →
+**Deployment Protection** → turn **Vercel Authentication** off for Production.
+Leaving it on for Preview deployments is sensible; leaving it on for Production
+means nobody can sign up.
 
 **The important constraint:** the Neon organisation is managed through the
 Vercel integration, so the Neon CLI cannot create projects in it —

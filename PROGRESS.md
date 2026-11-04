@@ -46,6 +46,14 @@ settings row, a subscription and the admin user with a bcrypt hash — then
 deleted, confirming `ON DELETE CASCADE` cleans up completely and leaves the
 platform role templates intact.
 
+Deployed to production at
+`https://office-management-system-sps-a983.vercel.app` (Ready in 36s). The
+landing page and the telemetry API both verified there through
+`npx vercel curl` — the serverless function reaches Neon and answers
+correctly. **Vercel Deployment Protection is still ON**, so the public cannot
+reach it yet; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the one setting
+to change.
+
 All 34 signed-in routes return 200 against live data. One real bug surfaced and
 was fixed: `payslips` was missing the `status` and `paid_at` columns that
 `payroll.ts` selected and the payroll action updated. `scripts/check-columns.mjs`
