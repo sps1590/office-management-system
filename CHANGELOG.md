@@ -3,6 +3,40 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-04 — Neon agent skills and MCP server
+
+### Added
+- `.claude/skills/neon/SKILL.md` and `.claude/skills/neon-postgres/SKILL.md`,
+  fetched from `https://neon.com/.well-known/agent-skills` and verified
+  against the registry's published SHA-256 digests (both matched).
+- `.mcp.json` registering Neon's hosted MCP server:
+  `{"neon": {"type": "http", "url": "https://mcp.neon.tech/mcp"}}`. OAuth, so
+  no API key is written into a file git tracks — which is what Neon's own
+  skill recommends for a project-level install. Endpoint verified live
+  (returns 401 until authorised).
+- `AGENTS.md`, which `CLAUDE.md` imported but which did not exist. `next dev`
+  rewrites this file, so having it present is the steady state.
+- `.neon` added to `.gitignore` ahead of `neon link`, which writes org,
+  project and branch ids there as local state.
+- A **Neon tooling** section in `CLAUDE.md` recording how the skills were
+  installed and how to refresh them.
+
+### Notes
+- Four of Neon's eight published skills were installed deliberately as two:
+  `neon` (the overview, which carries CLI and MCP setup) and `neon-postgres`
+  (connections, schema, branching — what this project actually does).
+  `neon-auth`, `neon-object-storage`, `neon-functions`, `neon-ai-gateway`,
+  `neon-realtime` and `neon-postgres-agent-platforms` were left out: this app
+  uses none of them, and every installed skill costs context in every
+  session. Each is one fetch from the same registry if that changes.
+- Installed by direct fetch rather than `npm i -g neon`, which the sandbox
+  declined as external code. The skill document sanctions this path
+  explicitly ("If the Neon CLI is not available, you can visit
+  …/.well-known/agent-skills … and fetch them manually"). Consequence: no
+  `skills-lock.json`, so `neon skills status` will not track them.
+- Nothing pre-existing was changed. There was no `.claude/`, no `.mcp.json`
+  and no MCP server configured at any scope before this.
+
 ## 2026-11-04 — v1.0 feature complete (not yet deployed)
 
 ### Added

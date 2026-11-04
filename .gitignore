@@ -30,6 +30,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# neon — `neon link` writes org/project/branch ids here; local state, not shared
+.neon
+
 # editors
 .idea
 .vscode

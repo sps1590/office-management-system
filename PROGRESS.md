@@ -47,6 +47,11 @@ filtering by `tenant_id`**.
   document can drift.
 - `scripts/check-tenancy.mjs`: derives the tenant-scoped table list from the
   schema and fails the build if a query omits `tenant_id`.
+- **Neon agent tooling** (added 2026-11-04): the `neon` and `neon-postgres`
+  agent skills are vendored into `.claude/skills/`, and `.mcp.json` registers
+  Neon's hosted MCP server at `https://mcp.neon.tech/mcp` over OAuth — URL
+  only, no credential in the repo. See the CHANGELOG entry for how to refresh
+  them and which of Neon's eight skills were deliberately left out.
 
 **Identity and access**
 - Cookie sessions with bcrypt (cost 10), Postgres-backed rate limiting on

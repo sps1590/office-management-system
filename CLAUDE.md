@@ -36,6 +36,23 @@ drift stale.
 - New dependencies need a reason recorded in `docs/PLAN.md`. The brief asked
   for the most optimised design; prefer a few lines of own code over a package.
 
+## Neon tooling
+
+- The `neon` and `neon-postgres` agent skills are vendored in
+  `.claude/skills/`. Use them for anything touching Neon itself — project and
+  branch creation, connection-string choice, branching workflows, egress and
+  autoscaling. They are the vendor's own guidance and outrank general
+  Postgres instinct.
+- `.mcp.json` registers Neon's hosted MCP server over OAuth. Approve it when
+  Claude Code prompts, then authorise in the browser; no API key is stored in
+  the repo. Prefer the Neon CLI (`npx neon@latest …`) over the MCP server when
+  both can do the job — it covers more, including Functions deploys.
+- The skills were vendored by direct fetch with SHA-256 verification against
+  `https://neon.com/.well-known/agent-skills`, not by the CLI, so there is no
+  `skills-lock.json` and `neon skills status` will not see them. To refresh,
+  re-fetch from that registry or let `npx neon@latest skills -s neon -y` take
+  over management.
+
 ## Security rules
 
 - Every query touching tenant data must filter by `tenant_id` taken from the
