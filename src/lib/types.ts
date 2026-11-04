@@ -57,6 +57,7 @@ export type UserRow = {
 export type TenantSettings = {
   tenant_id: string;
   standard_work_minutes: number;
+  work_start_time: string;
   grace_minutes: number;
   overtime_multiplier: number;
   overtime_after_minutes: number;

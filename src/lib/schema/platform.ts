@@ -56,6 +56,7 @@ export const PLATFORM_SCHEMA: string[] = [
   `CREATE TABLE IF NOT EXISTS tenant_settings (
      tenant_id                 UUID PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
      standard_work_minutes     INTEGER NOT NULL DEFAULT 480,
+     work_start_time           TIME NOT NULL DEFAULT '09:00',
      grace_minutes             INTEGER NOT NULL DEFAULT 15,
      overtime_multiplier       NUMERIC(4,2) NOT NULL DEFAULT 1.50,
      overtime_after_minutes    INTEGER NOT NULL DEFAULT 480,
