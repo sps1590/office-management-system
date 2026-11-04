@@ -9,71 +9,89 @@ the app at an empty database is all it takes to create one.
 
 ---
 
-## 1. What needs a human, and why
+## 1. This deployment is already provisioned
 
-Creating a Neon project and a Vercel project both require authorising against
-those accounts. That authorisation cannot be automated from here — it is one
-browser click each, and everything after it is scripted.
+Done on 2026-11-05. This section records what was actually run, so it can be
+reproduced or repaired.
 
-Run these two commands in a terminal **in the project folder**. Each opens a
-browser page; approve it within 60 seconds.
+| Thing | Value |
+|---|---|
+| Vercel team | `sps-a983` (SPS) |
+| Vercel project | `office-management-system` |
+| Neon org | `org-fragrant-queen-99830599` — **managed by Vercel** |
+| Neon resource | `office-management-system-db`, region `sin1` (Singapore) |
+| GitHub | `sps1590/office-management-system`, connected for push-to-deploy |
 
-```bash
-npx neonctl auth
-```
+**The important constraint:** the Neon organisation is managed through the
+Vercel integration, so the Neon CLI cannot create projects in it —
+`neon projects create` fails with
+`action restricted; reason:"organization is managed by Vercel"`. Databases must
+be provisioned from the Vercel side, which also means Vercel owns the
+connection env vars and injects them into every deployment. That is a feature,
+not a workaround: there is no connection string to copy by hand.
 
-```bash
-npx vercel login
-```
+## 2. Reproducing it from scratch
 
-## 2. Create the database
-
-```bash
-npx neonctl projects create --name office-management-system --region-id aws-ap-southeast-1
-```
-
-Then take the **pooled** connection string — the host containing `-pooler` —
-which keeps serverless functions from exhausting connections:
-
-```bash
-npx neonctl connection-string --pooled
-```
-
-Put it in `.env.local` for local work:
-
-```
-DATABASE_URL="postgresql://…-pooler.…neon.tech/neondb?sslmode=require"
-PLATFORM_ADMIN_IDENTIFIERS="sps1590@gmail.com"
-TELEMETRY_TOKEN_SECRET="<a long random string>"
-```
-
-Check it locally before deploying — the first request creates every table:
+One browser sign-in is needed; everything else is scripted.
 
 ```bash
-npm run dev
+npx -y vercel@latest login
 ```
 
-Open `http://localhost:3000`, register a company, and the schema is built.
-
-## 3. Create the Vercel project and deploy
+Create and link the project. This also connects the GitHub remote it finds in
+`git remote -v`, so push-to-deploy needs no dashboard step:
 
 ```bash
-npx vercel link --yes --project office-management-system
+npx -y vercel@latest link --yes --project office-management-system --scope sps-a983
+```
+
+Provision Postgres through the Neon marketplace integration. It creates the
+database, connects it to all three environments and pulls the vars into
+`.env.local`:
+
+```bash
+npx -y vercel@latest integration add neon --name office-management-system-db --meta region=sin1
+```
+
+That writes `DATABASE_URL` (pooled, `sslmode=require`) plus
+`DATABASE_URL_UNPOOLED`, the `PG*` set and the `POSTGRES_*` set. This app uses
+`DATABASE_URL` only; the rest are the integration's conventions for other
+frameworks and can be ignored.
+
+Add the two variables the integration does not manage:
+
+```bash
+printf '%s' 'you@example.com' | npx -y vercel@latest env add PLATFORM_ADMIN_IDENTIFIERS production
+```
+
+Repeat for `preview` and `development`, and for `TELEMETRY_TOKEN_SECRET`
+(any long random string — generate with
+`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`).
+
+## 3. Build the schema
+
+The schema is created on the first request that actually reads the database.
+Note that **loading the landing page or `/login` is not enough**: with no
+session cookie, `getSessionUser()` returns before it opens a connection. Either
+register a company through the UI, or poke an endpoint that always queries:
+
+```bash
+curl -X POST http://localhost:3001/api/telemetry/locations -H "Authorization: Bearer $(node -e "console.log('x'.repeat(48))")" -H "Content-Type: application/json" -d "{\"latitude\":23.81,\"longitude\":90.41}"
+```
+
+It answers `401` once the schema exists, which is the success signal here. The
+first call takes 10–15 seconds while 62 tables, 158 indexes and 521 constraints
+are created; afterwards it is milliseconds.
+
+Then verify:
+
+```bash
+npm run check
 ```
 
 ```bash
-npx vercel env add DATABASE_URL production
+npm run build
 ```
-
-Repeat `vercel env add` for `PLATFORM_ADMIN_IDENTIFIERS` and
-`TELEMETRY_TOKEN_SECRET`, then:
-
-```bash
-npx vercel --prod
-```
-
-Afterwards, connect the GitHub repository in the Vercel dashboard
-(Project → Settings → Git) so each push to `main` deploys automatically.
 
 ## 4. Environment variables
 

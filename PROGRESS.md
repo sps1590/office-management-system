@@ -30,11 +30,27 @@ Last updated: **2026-11-04**
 | 6 | Sales, CRM, field operations | **Done** |
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
-| 9 | Ship: GitHub, Neon, Vercel | **Code pushed; database and Vercel project not yet created** |
+| 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
 
-`npm run build` is clean. `npm run check:tenancy` reports **340 SQL statements
-across 108 files, 59 of 62 tables tenant-scoped, every tenant-scoped query
-filtering by `tenant_id`**.
+`npm run build` is clean. `npm run check` reports **340 SQL statements across
+108 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
+by `tenant_id`**, and **every referenced column existing in the schema**.
+
+### Verified against the live database, 2026-11-05
+
+The schema has now executed against real Postgres: **62 tables, 158 indexes,
+157 foreign keys, 521 check constraints**, 10 role templates and 3 subscription
+plans seeded. A test company was registered end to end — provisioning wrote 9
+role copies, 17 accounts, 5 leave types, 6 pipeline stages, a department, a
+settings row, a subscription and the admin user with a bcrypt hash — then
+deleted, confirming `ON DELETE CASCADE` cleans up completely and leaves the
+platform role templates intact.
+
+All 34 signed-in routes return 200 against live data. One real bug surfaced and
+was fixed: `payslips` was missing the `status` and `paid_at` columns that
+`payroll.ts` selected and the payroll action updated. `scripts/check-columns.mjs`
+was added to catch that class of error statically, and reports clean across all
+340 statements.
 
 ## What's built
 
@@ -115,9 +131,6 @@ filtering by `tenant_id`**.
   not built. The server half is complete and the PWA tracker works, but it
   reports only while its page is open. This was flagged before any code was
   written; see [docs/PLAN.md](docs/PLAN.md#explicit-scope-boundary--read-before-sign-off).
-- **Neon database and Vercel project** — both need one browser authorisation
-  from the account owner. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has the
-  exact commands.
 - **Email and SMS delivery.** Notification rows are written and shown in the
   in-app notification centre; sending needs a provider key.
 - **Payment gateway.** Plans and subscriptions are modelled; nothing bills.
@@ -140,10 +153,12 @@ filtering by `tenant_id`**.
 
 ## Known gaps and risks
 
-- **No live database yet**, so the schema has been verified by the TypeScript
-  build and the tenancy lint but not yet executed against Postgres. The first
-  run will exercise all 62 `CREATE TABLE` statements; expect to fix anything it
-  rejects at that point.
+- **Write paths are less exercised than read paths.** All 34 routes were
+  smoke-tested against live data and tenant provisioning was run end to end,
+  but most individual mutations (raise a PO, approve leave, generate payroll)
+  have only been verified statically — by the build, the tenancy lint and the
+  column check — not by being clicked. `check-columns.mjs` covers the error
+  class that actually bit; logic errors in those flows would not be caught.
 - **Employee location tracking is regulated.** Before enabling it the operator
   needs a written policy, employee notice and in many jurisdictions consent.
   The system supports a retention limit and a tracking time window; the policy

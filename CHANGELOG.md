@@ -3,6 +3,48 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-05 — Database provisioned, deployed, first live run
+
+### Fixed
+- **`payslips` was missing `status` and `paid_at`**, which `src/lib/payroll.ts`
+  selected (`ps.status`) and `setPayrollStatusAction` updated. `/payroll` and
+  `/me` returned 500 with `column ps.status does not exist`. Added to the
+  `CREATE TABLE` for fresh databases *and* as `ADD COLUMN IF NOT EXISTS` for
+  the database that already existed. This is the first bug the TypeScript build
+  could not have caught — it only appears when the SQL runs.
+- `PermissionMatrix` mapped a fragment without a key, so React warned on
+  `/users`. Now `<Fragment key={group.label}>`.
+
+### Added
+- `scripts/check-columns.mjs` and `npm run check:columns`: resolves every
+  `alias.column`, `INSERT INTO t (…)` and `UPDATE t SET …` reference in the
+  codebase against the schema. Written after the `payslips` bug to catch that
+  class statically rather than by clicking. Reports clean across 340
+  statements. `npm run check` now runs the tenancy and column checks together.
+
+### Infrastructure
+- Vercel project `office-management-system` created under team `sps-a983`, with
+  the GitHub repo connected for push-to-deploy.
+- Neon Postgres `office-management-system-db` provisioned in `sin1` through the
+  Vercel marketplace integration, connected to production, preview and
+  development. The Neon CLI **cannot** create projects in this org
+  (`organization is managed by Vercel`), which is why it was done this way;
+  `docs/DEPLOYMENT.md` has been rewritten accordingly.
+- `PLATFORM_ADMIN_IDENTIFIERS` and `TELEMETRY_TOKEN_SECRET` set in all three
+  environments.
+
+### Verified against live Postgres
+- Schema executed clean on the first attempt: 62 tables, 158 indexes, 157
+  foreign keys, 521 check constraints, 10 role templates, 3 plans.
+- End-to-end company registration: provisioning wrote 9 role copies, 17
+  accounts, 5 leave types, 6 pipeline stages, a department, settings,
+  subscription and the admin user (bcrypt). Deleting the tenant cascaded to
+  zero rows everywhere while leaving the platform role templates intact.
+- All 34 signed-in routes return 200 against live data.
+- A note worth keeping: the landing page and `/login` do **not** create the
+  schema, because `getSessionUser()` returns before opening a connection when
+  there is no cookie. Registering, or any authenticated request, does.
+
 ## 2026-11-04 — Neon agent skills and MCP server
 
 ### Added

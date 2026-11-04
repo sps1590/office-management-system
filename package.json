@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check": "npm run check:tenancy && npm run check:columns",
     "check:tenancy": "node scripts/check-tenancy.mjs",
+    "check:columns": "node scripts/check-columns.mjs",
     "docs:schema": "node scripts/gen-schema-docs.mjs",
     "docs:srs": "python -I scripts/extract-srs.py"
   },

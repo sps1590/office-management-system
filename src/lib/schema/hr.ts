@@ -180,7 +180,22 @@ export const HR_SCHEMA: string[] = [
      present_days     NUMERIC(5,1) NOT NULL DEFAULT 0,
      leave_days       NUMERIC(5,1) NOT NULL DEFAULT 0,
      absent_days      NUMERIC(5,1) NOT NULL DEFAULT 0,
+     status           TEXT NOT NULL DEFAULT 'draft',
+     paid_at          TIMESTAMPTZ,
      note             TEXT,
+     CONSTRAINT payslips_status_check
+       CHECK (status IN ('draft','approved','paid')),
      UNIQUE (payroll_run_id, user_id)
    )`,
+
+  // payslips.status and paid_at were missing from the first deployed version
+  // while the payroll queries and the approve/pay action both used them --
+  // caught by the first run against a real database. Added here as well as in
+  // the CREATE above, because a database created before this point already
+  // exists and there is no migration runner.
+  `ALTER TABLE payslips ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft'`,
+  `ALTER TABLE payslips ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`,
+  `ALTER TABLE payslips DROP CONSTRAINT IF EXISTS payslips_status_check`,
+  `ALTER TABLE payslips ADD CONSTRAINT payslips_status_check
+     CHECK (status IN ('draft','approved','paid'))`,
 ];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { Fragment, useActionState, useState } from "react";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { updateRoleMatrixAction } from "@/lib/actions/employees";
 import SubmitButton from "@/components/SubmitButton";
@@ -97,8 +97,11 @@ export default function PermissionMatrix({
           </thead>
           <tbody>
             {MODULE_GROUPS.map((group) => (
-              <>
-                <tr key={group.label} className="bg-surface-2">
+              // Fragment needs the key: the group header and its module rows
+              // are siblings in one <tbody>, so they cannot be wrapped in an
+              // element without breaking the table.
+              <Fragment key={group.label}>
+                <tr className="bg-surface-2">
                   <td
                     colSpan={PERM_ACTIONS.length + 2}
                     className="text-[0.6875rem] font-bold uppercase tracking-wider text-fg-subtle"
@@ -134,7 +137,7 @@ export default function PermissionMatrix({
                     </td>
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
