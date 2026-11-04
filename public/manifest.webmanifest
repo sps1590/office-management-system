@@ -1,0 +1,19 @@
+{
+  "name": "Office Management System",
+  "short_name": "OMS",
+  "description": "HR, fleet, procurement, finance, CRM and field operations in one workspace, with a live operations map.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fa",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

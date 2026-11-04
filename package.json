@@ -1,0 +1,37 @@
+{
+  "name": "office-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Comprehensive Office Management System (OMS) — multi-tenant SaaS with HR, Fleet, Procurement & Supply Chain, Finance, CRM/Field Ops, Facilities, Tasks, IT/MIS and enterprise GPS tracking.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "check:tenancy": "node scripts/check-tenancy.mjs",
+    "docs:schema": "node scripts/gen-schema-docs.mjs",
+    "docs:srs": "python -I scripts/extract-srs.py"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "bcryptjs": "^3.0.3",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.38.0",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/leaflet": "^1.9.12",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
