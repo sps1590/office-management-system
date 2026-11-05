@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { hasPermission, requirePermission } from "@/lib/permissions";
+import { hasPermission, isCompanyAdmin, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { postJournal } from "@/lib/ledger";
@@ -515,7 +515,13 @@ export async function submitPurchaseOrderAction(
        LIMIT 1
     `;
     const approverId = (approverRows[0] as { id: string } | undefined)?.id ?? null;
-    if (!approverId || notified.includes(approverId)) continue;
+    // Nobody approves the order they raised themselves -- decide() enforces
+    // that too, so a tier resolving to the requester would park the order in
+    // "pending" with an approver who is refused at the point of clicking.
+    // Skip it and let the next tier handle it, as the leave chain does. The
+    // common case is the procurement manager, who both raises orders and
+    // holds tier 1.
+    if (!approverId || approverId === user.id || notified.includes(approverId)) continue;
     tierNumber += 1;
     notified.push(approverId);
     await db`
@@ -526,10 +532,64 @@ export async function submitPurchaseOrderAction(
     `;
   }
 
+  // Every applicable tier resolved to nobody but the requester, which is the
+  // normal state of a young company: the default tiers name
+  // procurement_manager and finance_manager, and nobody holds those roles
+  // until staff are hired. Fall back to a company admin other than the
+  // requester, the same "never un-approvable" rule the leave chain applies.
   if (tierNumber === 0) {
+    const adminRows = await db`
+      SELECT u.id FROM users u
+        JOIN roles r ON r.id = u.role_id
+       WHERE u.tenant_id = ${user.tenant_id} AND u.status = 'active'
+         AND r.key = 'company_admin' AND u.id <> ${user.id}
+       ORDER BY u.created_at
+       LIMIT 1
+    `;
+    const fallbackId = (adminRows[0] as { id: string } | undefined)?.id ?? null;
+    if (fallbackId) {
+      tierNumber = 1;
+      notified.push(fallbackId);
+      await db`
+        INSERT INTO po_approvals (tenant_id, purchase_order_id, approver_id, approver_role,
+                                  tier, threshold_amount, decision)
+        VALUES (${user.tenant_id}, ${poId}, ${fallbackId}, 'company_admin', 1, 0, 'pending')
+      `;
+    }
+  }
+
+  // There is genuinely nobody else to ask: a company whose only active user is
+  // the person raising the order. Approving it on submission is the honest
+  // answer -- it grants no power they do not already have, since a company
+  // admin can edit the approval tiers and assign themselves any role, and the
+  // alternative is an order that can never leave "pending". It is recorded as
+  // an unapproved auto-release in the audit log, and stops happening the
+  // moment a second user exists.
+  if (tierNumber === 0) {
+    if (!isCompanyAdmin(user)) {
+      return {
+        error:
+          "No approver could be found for this value. Ask your administrator to assign the approval roles in Company settings.",
+      };
+    }
+    await db`
+      UPDATE purchase_orders
+         SET status = 'approved', current_tier = 1, total_tiers = 1
+       WHERE id = ${poId} AND tenant_id = ${user.tenant_id}
+    `;
+    await audit({
+      tenantId: user.tenant_id,
+      userId: user.id,
+      action: "po.auto_approved",
+      entity: "purchase_order",
+      entityId: poId,
+      summary: `${po.po_number} released without approval — no other active user could approve it`,
+    });
+    revalidatePath(`/procurement/${poId}`);
+    revalidatePath("/procurement");
     return {
-      error:
-        "No approver could be found for this value. Ask your administrator to assign the approval roles in Company settings.",
+      success:
+        "Approved on submission — you are the only active user, so there was nobody else to approve it. Add a second user to get a real approval chain.",
     };
   }
 

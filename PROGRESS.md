@@ -13,7 +13,7 @@ alone what exists, what does not, and why decisions were made.
 - Dated history of changes: [CHANGELOG.md](CHANGELOG.md).
 - Conventions an agent must follow: [CLAUDE.md](CLAUDE.md).
 
-Last updated: **2026-11-04**
+Last updated: **2026-11-05**
 
 ---
 
@@ -32,7 +32,7 @@ Last updated: **2026-11-04**
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
 
-`npm run build` is clean. `npm run check` reports **340 SQL statements across
+`npm run build` is clean. `npm run check` reports **343 SQL statements across
 108 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
 
@@ -58,7 +58,23 @@ All 34 signed-in routes return 200 against live data. One real bug surfaced and
 was fixed: `payslips` was missing the `status` and `paid_at` columns that
 `payroll.ts` selected and the payroll action updated. `scripts/check-columns.mjs`
 was added to catch that class of error statically, and reports clean across all
-340 statements.
+343 statements.
+
+### Every write path executed, 2026-11-05
+
+**70 mutations across all nine modules ran against live Postgres** through the
+real Server Actions, in three seats — 59 as the company admin, 6 as an
+employee, and 5 back as the admin approving what the employee raised — so
+every approval chain was exercised in both directions. **The double-entry
+ledger balanced after every posting**: 175,545.45 on each side over 14
+auto-posted lines, then 280,945.45 on each side over 22 lines once the
+approvals had posted.
+
+That run found and fixed **two purchase-order dead ends**, both detailed in
+[CHANGELOG.md](CHANGELOG.md): a new company could not submit any order below
+500,000, and an order raised by the procurement manager could never be
+approved by anyone. Neither was reachable by reading code or running the
+build — both needed the SQL and the approval resolution to actually execute.
 
 ## What's built
 
@@ -161,12 +177,20 @@ was added to catch that class of error statically, and reports clean across all
 
 ## Known gaps and risks
 
-- **Write paths are less exercised than read paths.** All 34 routes were
-  smoke-tested against live data and tenant provisioning was run end to end,
-  but most individual mutations (raise a PO, approve leave, generate payroll)
-  have only been verified statically — by the build, the tenancy lint and the
-  column check — not by being clicked. `check-columns.mjs` covers the error
-  class that actually bit; logic errors in those flows would not be caught.
+- **Write paths have now been executed, but never clicked.** All 70 mutations
+  were run against live Postgres through the real Server Actions (see the
+  2026-11-05 changelog entry), which found and fixed two purchase-order dead
+  ends. What is still untested is the browser layer above them: form markup,
+  `useActionState` wiring, client-side validation messages and the map and
+  chart components. A field name misspelled in JSX would not be caught by
+  anything run so far.
+- **Two deliberate behaviours that look like bugs.** A sole company admin
+  cannot *request* leave, because an approver chain needs somebody other than
+  the requester — HR manual entry is the path for recording their own
+  absence. And nobody can approve or reimburse their own expense claim. Both
+  are separation-of-duties rules, not defects; a one-person company works
+  around them through HR manual entry and the auto-release described in the
+  changelog.
 - **Employee location tracking is regulated.** Before enabling it the operator
   needs a written policy, employee notice and in many jurisdictions consent.
   The system supports a retention limit and a tracking time window; the policy

@@ -3,6 +3,72 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-05 — Every write path executed; two purchase-order dead ends fixed
+
+### Fixed
+- **A new company could not submit a purchase order at all.** The default
+  approval tiers name `procurement_manager` (from 0) and `finance_manager`
+  (from 50,000), and nobody holds those roles on a company's first day, so
+  every applicable tier resolved to nobody and `submitPurchaseOrderAction`
+  returned *"No approver could be found for this value."* Only orders above
+  500,000 — the `company_admin` tier — went through, so small orders were
+  blocked while large ones passed.
+- **A purchase order raised by the procurement manager could never be
+  approved.** The tier loop did not exclude the requester, so tier 1 resolved
+  to the person who raised the order, while `decidePurchaseOrderAction`
+  refuses with *"You cannot approve an order you raised."* The order was
+  parked in `pending` with an approver who was refused at the point of
+  clicking. This one hits an ordinary staffed company, not just a new one.
+
+  Both are fixed in `submitPurchaseOrderAction` by giving it the rule the
+  leave chain already had: skip a tier that resolves to the requester, then
+  fall back to a company admin other than the requester. When there is
+  genuinely nobody else — a company whose only active user is the admin who
+  registered it — the order is approved on submission and recorded in the
+  audit log as `po.auto_approved`, with a message saying so. That grants no
+  power the admin did not have (they can edit the tiers and assign themselves
+  any role), and the alternative is an order that can never leave `pending`.
+- `AGENTS.md` held two copies of the Next.js agent block: the one written by
+  hand when `CLAUDE.md` turned out to import a missing file, and the
+  delimited one `next dev` writes and maintains. Only the delimited one is
+  kept, so the working tree stops going dirty on every `next dev`.
+
+### Verified against live Postgres — every write path, not just the reads
+- A temporary harness called the real Server Actions server-side inside a
+  request carrying a real session cookie, so permission checks, zod
+  validation, the SQL and the ledger posting all ran exactly as they do from
+  the UI. **70 write operations across all nine modules passed**, in three
+  seats: 59 as the company admin, 6 as an employee, 5 back as the admin
+  approving what the employee raised.
+- **The double-entry ledger balanced after every posting**: 175,545.45 debits
+  against 175,545.45 credits over 14 auto-posted lines after the admin phase,
+  and 280,945.45 against 280,945.45 over 22 lines once the approvals had
+  posted. Payroll, purchase receipt, trip fuel and tolls, invoices, payments
+  and expense reimbursement all post, and all balance.
+- Both directions of every approval chain were exercised with a real
+  separation of duties — admin raises and employee approves, employee raises
+  and admin approves — plus the day-one single-user case, where a 34,000
+  order now submits, auto-approves and posts to accounts payable.
+- The room-booking overlap guard was tested by booking the same slot twice;
+  the clash is refused, which is the pass condition for that step.
+- Deleting the five harness tenants afterwards left **0 tenants and the 3
+  subscription plans intact**, confirming `ON DELETE CASCADE` again over far
+  more data than the first run.
+
+### Notes
+- The harness was deleted rather than kept: reaching the approval paths needed
+  a mode that swaps the session cookie to another user, and an impersonation
+  endpoint must not exist in a shipped app, however it is guarded. The method
+  is recorded here so it can be rebuilt: one route handler under
+  `src/app/api/`, importing the actions and calling them with a constructed
+  `FormData`, treating a thrown `NEXT_REDIRECT` digest as success.
+- Two product behaviours are deliberate and were left alone, now documented in
+  PROGRESS.md: a sole company admin cannot *request* leave (no approver can
+  exist; HR manual entry covers recording their absence), and nobody can
+  approve their own expense claim.
+- A route folder named `__writetest` is not reachable: App Router treats a
+  leading underscore as a private folder and excludes it from routing.
+
 ## 2026-11-05 — Database provisioned, deployed, first live run
 
 ### Fixed

@@ -64,6 +64,15 @@ drift stale.
   (`requirePermission(module, action)`), even though the UI already hides
   controls the user cannot use. Page-level hiding is UX only, never
   enforcement.
+- **Any approval chain must satisfy both halves of the rule, or it dead-ends.**
+  Nobody may decide a request they raised — and because of that, resolving an
+  approver must *skip* a stage that lands on the requester and fall back to a
+  company admin other than them, the way `leave.ts` and
+  `submitPurchaseOrderAction` both do. Enforcing only the refusal, without the
+  skip, parks the record in `pending` with an approver who is refused the
+  moment they click: the shape of the two bugs fixed on 2026-11-05. When no
+  approver can exist at all because the company has one active user, release
+  the record and write an audit row rather than leaving it unactionable.
 - Run `npm run check:tenancy` before every commit that touches SQL. It fails
   if a query on a tenant-scoped table omits `tenant_id`. Add a
   `-- tenancy-ok: <reason>` comment only for a deliberate exception, such as
