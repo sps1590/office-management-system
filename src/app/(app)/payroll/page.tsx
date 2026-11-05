@@ -6,7 +6,7 @@ import { listPayrollRuns, myPayslips } from "@/lib/payroll";
 import { generatePayrollAction } from "@/lib/actions/payroll";
 import AutoForm from "@/components/forms/AutoForm";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
-import { formatDate, money, monthName } from "@/lib/utils";
+import { formatDate, isoDate, money, monthName } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Payroll" };
 
@@ -21,8 +21,10 @@ export default async function PayrollPage() {
     myPayslips(user.tenant_id, user.id),
   ]);
 
-  const now = new Date();
-  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  // Which month "last month" is depends on the company's calendar, not the
+  // server's: on the first of the month they can disagree.
+  const [thisYear, thisMonth] = isoDate(tz).split("-").map(Number);
+  const lastMonth = new Date(Date.UTC(thisYear, thisMonth - 2, 1));
   const paidRuns = runs.filter((r) => r.status === "paid");
   const latestPaid = paidRuns[0];
 
@@ -187,7 +189,7 @@ export default async function PayrollPage() {
                   label: "Month",
                   type: "select",
                   required: true,
-                  defaultValue: String(lastMonth.getMonth() + 1),
+                  defaultValue: String(lastMonth.getUTCMonth() + 1),
                   options: Array.from({ length: 12 }, (_, i) => ({
                     value: String(i + 1),
                     label: monthName(i + 1),
@@ -200,7 +202,7 @@ export default async function PayrollPage() {
                   required: true,
                   min: 2000,
                   max: 2100,
-                  defaultValue: lastMonth.getFullYear(),
+                  defaultValue: lastMonth.getUTCFullYear(),
                 },
               ]}
             />
