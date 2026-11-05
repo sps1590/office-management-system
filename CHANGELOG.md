@@ -3,6 +3,46 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-05 — A refused room booking now says when the room is free
+
+Refusing an overlap with "already booked for part of that slot" left the next
+attempt to guesswork: pick a time, submit, be refused again. The refusal now
+carries the answer it already has.
+
+- `findFreeSlots()` in `src/lib/workplace.ts` walks the gaps between a room's
+  confirmed bookings over the next seven days and returns the first few
+  windows long enough for the meeting that was asked for. The search runs
+  over the company's working hours from `tenant_settings`
+  (`work_start_time` + `standard_work_minutes`), widened on the requested day
+  itself so an after-hours request is answered after hours, and skips
+  `weekend_days` on later days — the first use the system makes of that
+  setting. One suggestion comes out of each gap, at its earliest start, so a
+  meeting can begin the moment the room empties.
+- `bookRoomAction` now selects the clashing booking rather than `SELECT 1`,
+  so the message names the time in the way: *"Mini Meeting Room is already
+  booked 09:30–10:20. It is free at these times:"* — or says plainly that
+  nothing that long is free in the next week.
+- `ActionState` gained `suggestions`, a list of `{ label, values }`.
+  `AutoForm` draws them as buttons under the error; a click writes the values
+  into the inputs of those names and focuses the first, so a refusal that
+  knows the answer costs one click instead of a re-type. It is generic, not
+  room-specific: any action that can name a way out can offer one.
+- Bookings are written from `datetime-local` inputs, which carry no zone, so
+  every calculation reads and writes UTC components. A suggestion therefore
+  round-trips back into the form as exactly the clock time its label names.
+  (The separate, still-open issue — that `formatDateTime` renders the
+  bookings table in the *server's* zone — is unchanged and unrelated.)
+
+Verified end to end against a throwaway tenant on the real database, since
+this is arithmetic that only shows its errors on real data: booking
+09:30–10:20 then asking for 10:00–10:30 offered `09:00–09:30`,
+`10:20–10:50` and `Mon 09 Nov, 09:00–09:30`; the middle one booked
+back-to-back on one click. A nine-hour request against an eight-hour working
+day produced the no-slot message and no buttons. A full Friday booking
+offered `Sun 15 Nov` first, skipping both the booked Friday and the Saturday
+weekend. Checked in light and dark themes and at 375 px, where the buttons
+wrap without overflow. The test tenant was deleted afterwards.
+
 ## 2026-11-05 — Verified against production; found a cross-region latency problem
 
 ### Verified on the deployed app

@@ -40,6 +40,15 @@ drift stale.
   carried its success, so anything rendered from its own state is never seen.
   `ActionButton` already raises successes through `toast()`; a refusal leaves
   the record alone, so it stays inline where it was caused.
+- **A refusal that knows the way out offers it.** When an action can compute
+  the alternative it is refusing in favour of — the next free window for a
+  double-booked room — it returns `suggestions: [{ label, values }]` and
+  `AutoForm` draws them as buttons that fill the named inputs. Do not write a
+  message telling someone to work the answer out themselves.
+- **Timestamps written from a `datetime-local` input carry no zone**, so the
+  wall clock typed is what lands in the column. Anything that calculates over
+  those columns reads and writes UTC components (see `findFreeSlots`), or the
+  value it hands back will not be the time its label says.
 - **A new `nextDocNumber` kind is a new entry in its union, not the nearest
   existing one.** Reusing another kind's sequence silently shares a counter
   and collides with whatever `provision.ts` seeded — that is how every

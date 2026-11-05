@@ -82,4 +82,11 @@ export type ActionState = {
   success?: string;
   /** Field-level messages keyed by input name, from a zod flatten(). */
   fieldErrors?: Record<string, string[]>;
+  /**
+   * Ways out of a refusal, drawn as buttons under the error. Clicking one
+   * writes its `values` into the inputs of those names, so an action that
+   * already knows the answer -- the next free slot for a double-booked room --
+   * costs a click rather than a re-type.
+   */
+  suggestions?: { label: string; values: Record<string, string> }[];
 } | null;

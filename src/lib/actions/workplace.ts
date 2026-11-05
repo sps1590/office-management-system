@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { nextDocNumber } from "@/lib/sequence";
+import { findFreeSlots, slotLabel } from "@/lib/workplace";
 import { audit, notify } from "@/lib/audit";
 import type { ActionState } from "@/lib/types";
 
@@ -141,13 +142,35 @@ export async function bookRoomAction(
   }
 
   const overlap = await db`
-    SELECT 1 FROM room_bookings
+    SELECT start_time, end_time FROM room_bookings
      WHERE tenant_id = ${user.tenant_id} AND room_id = ${d.roomId}
        AND status = 'confirmed'
        AND start_time < ${d.endTime} AND end_time > ${d.startTime}
+     ORDER BY start_time
+     LIMIT 1
   `;
   if (overlap.length > 0) {
-    return { error: `${room.name} is already booked for part of that slot.` };
+    // "Already booked" on its own leaves someone guessing at times until one
+    // sticks, so the refusal carries the clash it hit and the room's next
+    // free windows, each one click away from being the new request.
+    const taken = overlap[0] as { start_time: string; end_time: string };
+    const busyAt = slotLabel(taken.start_time, taken.end_time, d.startTime);
+    const free = await findFreeSlots(
+      user.tenant_id,
+      d.roomId,
+      d.startTime,
+      d.endTime
+    );
+    return {
+      error:
+        free.length > 0
+          ? `${room.name} is already booked ${busyAt}. It is free at these times:`
+          : `${room.name} is already booked ${busyAt}, and has no free slot that long in the next week.`,
+      suggestions: free.map((s) => ({
+        label: s.label,
+        values: { startTime: s.start, endTime: s.end },
+      })),
+    };
   }
 
   await db`

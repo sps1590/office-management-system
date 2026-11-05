@@ -32,7 +32,7 @@ Last updated: **2026-11-05**
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
 
-`npm run build` is clean. `npm run check` reports **344 SQL statements across
+`npm run build` is clean. `npm run check` reports **345 SQL statements across
 110 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
 
@@ -152,7 +152,8 @@ That run surfaced the cross-region latency problem recorded under
   and profit-and-loss derived from the journal; multi-line invoices,
   purchase-order-aware bills, receipts and payments, expense claims with a
   two-step approve-then-reimburse treatment, manual journal entry.
-- **Workplace**: meeting rooms with overlap-checked booking, visitor register
+- **Workplace**: meeting rooms whose overlap refusal names the clash and
+  offers the room's next free windows as one-click alternatives, visitor register
   that notifies the host, asset register with chain-of-custody history,
   projects and tasks with GPS-stamped completion.
 - **IT/MIS and GPS**: executive dashboard with an operational-bottleneck list,

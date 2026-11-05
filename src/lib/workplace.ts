@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { getSettings } from "./settings";
 
 /* --- rooms ---------------------------------------------------------------- */
 
@@ -56,6 +57,164 @@ export async function listRoomBookings(
     room_name: string;
     booked_by_name: string;
   }[];
+}
+
+/* --- free-slot search ------------------------------------------------------
+   A refused booking is only half an answer; the useful half is when the room
+   IS free. Bookings are written from `datetime-local` inputs, which carry no
+   zone, so the wall clock someone typed is what lands in the column. Every
+   calculation below therefore reads and writes UTC components, which keeps a
+   suggested slot round-tripping back into the form as exactly the clock time
+   its label names.
+   -------------------------------------------------------------------------- */
+
+export type FreeSlot = {
+  /** "10:20–10:50", or "Mon 09 Nov, 09:00–09:30" when it is another day. */
+  label: string;
+  /** `datetime-local` values, ready to drop straight back into the form. */
+  start: string;
+  end: string;
+};
+
+const SEARCH_DAYS = 7;
+const MIN_SLOT_MINUTES = 15;
+const DAY_MS = 86_400_000;
+
+const dayText = new Intl.DateTimeFormat("en-GB", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+  timeZone: "UTC",
+});
+const timeText = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "UTC",
+});
+
+/** Reads a stored or typed timestamp as a wall clock, without shifting it. */
+function wallClock(value: string | Date): Date {
+  if (value instanceof Date) return value;
+  const text = value.replace(" ", "T");
+  return new Date(/(Z|[+-]\d\d:?\d\d)$/.test(text) ? text : `${text}Z`);
+}
+
+const startOfDay = (d: Date) =>
+  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+/** Names a time range, adding the date only when it is not `sameDayAs`. */
+export function slotLabel(
+  start: string | Date,
+  end: string | Date,
+  sameDayAs: string | Date
+): string {
+  const a = wallClock(start);
+  const b = wallClock(end);
+  const range = `${timeText.format(a)}–${timeText.format(b)}`;
+  return startOfDay(a).getTime() === startOfDay(wallClock(sameDayAs)).getTime()
+    ? range
+    : `${dayText.format(a)}, ${range}`;
+}
+
+/**
+ * The next few windows in which one room is free for as long as was asked
+ * for, so a refused booking offers somewhere to go instead of a dead end.
+ *
+ * The search runs over the company's working hours, widened on the requested
+ * day itself so an after-hours request is answered after hours rather than
+ * told to come back at nine, and skips the configured weekend on later days.
+ * One suggestion comes out of each gap — its earliest start, since a meeting
+ * that can begin the moment the room empties is the one people want.
+ */
+export async function findFreeSlots(
+  tenantId: string,
+  roomId: string,
+  wantedStart: string,
+  wantedEnd: string,
+  limit = 3
+): Promise<FreeSlot[]> {
+  const from = wallClock(wantedStart);
+  const to = wallClock(wantedEnd);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return [];
+
+  const duration = Math.max(
+    to.getTime() - from.getTime(),
+    MIN_SLOT_MINUTES * 60_000
+  );
+  const firstDay = startOfDay(from);
+  const horizon = new Date(firstDay.getTime() + SEARCH_DAYS * DAY_MS);
+
+  const db = await getDb();
+  const [settings, rows] = await Promise.all([
+    getSettings(tenantId),
+    db`
+      SELECT start_time, end_time
+        FROM room_bookings
+       WHERE tenant_id = ${tenantId} AND room_id = ${roomId}
+         AND status = 'confirmed'
+         AND end_time > ${firstDay.toISOString()}
+         AND start_time < ${horizon.toISOString()}
+       ORDER BY start_time
+    `,
+  ]);
+
+  const busy = (rows as unknown as { start_time: string; end_time: string }[]).map(
+    (r) => ({
+      start: wallClock(r.start_time).getTime(),
+      end: wallClock(r.end_time).getTime(),
+    })
+  );
+
+  const [h, m] = settings.work_start_time.split(":").map(Number);
+  const opensAt = ((h || 0) * 60 + (m || 0)) * 60_000;
+  const closesAt = Math.min(
+    opensAt + settings.standard_work_minutes * 60_000,
+    DAY_MS
+  );
+  // 0 = Sunday, the JS day numbering the weekend_days default [5, 6] —
+  // Friday and Saturday — was written against.
+  const weekend = new Set(settings.weekend_days ?? []);
+  // Rounded up so a slot offered "from now" starts on a whole minute, which
+  // is all a datetime-local input can carry anyway.
+  const now = Math.ceil(Date.now() / 60_000) * 60_000;
+
+  const slots: FreeSlot[] = [];
+  const offer = (start: number) => {
+    const a = new Date(start);
+    const b = new Date(start + duration);
+    slots.push({
+      label: slotLabel(a, b, from),
+      start: a.toISOString().slice(0, 16),
+      end: b.toISOString().slice(0, 16),
+    });
+  };
+
+  for (let i = 0; i < SEARCH_DAYS && slots.length < limit; i++) {
+    const day = new Date(firstDay.getTime() + i * DAY_MS);
+    if (i > 0 && weekend.has(day.getUTCDay())) continue;
+
+    let open = day.getTime() + opensAt;
+    let close = day.getTime() + closesAt;
+    if (i === 0) {
+      open = Math.min(open, from.getTime());
+      close = Math.max(close, to.getTime());
+    }
+
+    let cursor = Math.max(open, now);
+    for (const b of busy) {
+      if (b.end <= cursor) continue;
+      if (b.start >= close) break;
+      if (b.start - cursor >= duration) {
+        offer(cursor);
+        if (slots.length >= limit) break;
+      }
+      cursor = Math.max(cursor, b.end);
+    }
+    if (slots.length < limit && close - cursor >= duration) offer(cursor);
+  }
+
+  return slots;
 }
 
 /* --- visitors ------------------------------------------------------------- */

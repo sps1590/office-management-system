@@ -77,6 +77,32 @@ export default function AutoForm({
     if (resetOnSuccess && state?.success) preserved.ref.current?.reset();
   }, [state?.success, resetOnSuccess, preserved.ref]);
 
+  /**
+   * Fills the inputs a suggestion names. An action that refuses something it
+   * knows the answer to -- a room already booked at the hour asked for -- can
+   * offer the answer as a button instead of leaving the times to guesswork.
+   * The inputs are uncontrolled, so writing `value` is the whole job.
+   */
+  const applySuggestion = (values: Record<string, string>) => {
+    const form = preserved.ref.current;
+    if (!form) return;
+    let first: HTMLElement | null = null;
+    for (const [name, value] of Object.entries(values)) {
+      const el = form.elements.namedItem(name);
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLSelectElement ||
+        el instanceof HTMLTextAreaElement
+      ) {
+        el.value = value;
+        first ??= el;
+      }
+    }
+    // Moving focus is the confirmation that the click landed: the field it
+    // changed is the one the eye goes to.
+    first?.focus();
+  };
+
   const gridCols =
     columns === 1 ? "grid-cols-1" : columns === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3";
 
@@ -93,7 +119,23 @@ export default function AutoForm({
       {state?.error && (
         <div className="alert alert-error flex items-start gap-2" role="alert">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <span>{state.error}</span>
+          <div className="min-w-0 flex-1">
+            <span>{state.error}</span>
+            {state.suggestions && state.suggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {state.suggestions.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => applySuggestion(s.values)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
       {state?.success && (
