@@ -3,6 +3,39 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-05 — Verified against production; found a cross-region latency problem
+
+### Verified on the deployed app
+Commit `75e64fc` was exercised in Chrome against
+`https://office-management-system-sps-a983.vercel.app`, not just locally:
+registration (including a deliberate validation failure), the dashboard, the
+first employee, the users table and the permission matrix. The two fixes that
+matter most behave in production exactly as they do locally — the refused
+registration kept all five text fields and cleared only the passwords, and
+**the first employee was created rather than crashing the page**. The smoke
+tenant was deleted afterwards, leaving 0 tenants, users and accounts with the
+10 role templates and 3 plans intact.
+
+### Found, not fixed
+- **The functions and the database are on opposite sides of the world.**
+  Vercel runs this project's functions in `iad1` (Washington) — there is no
+  `vercel.json`, so it takes the account default — while the Neon database is
+  in `ap-southeast-1` (Singapore). Every query is a ~230 ms round trip. One
+  warm API call carrying a single query measures ~400 ms to first byte, and
+  **registering a company took about 45 seconds**, because provisioning
+  issues roughly forty queries one after another. The Neon HTTP driver has no
+  transactions, so those writes cannot be batched into one statement, which
+  makes the latency multiply instead of amortise.
+
+  Nothing about this is visible in development: a local server in Dhaka is
+  close to Singapore, so the same registration takes a few seconds. It is a
+  deployment topology problem, not a code one. Two ways out, both the
+  owner's call — move the functions to `sin1` so they sit beside the
+  database (best for users in Bangladesh, and it may need a paid plan), or
+  move the Neon database to US East to sit beside the functions (free, and
+  turns forty slow round trips into one). Parallelising the independent
+  writes in `provision.ts` would cut the count either way.
+
 ## 2026-11-05 — Clicked through the UI; six defects above the action layer
 
 The previous entry executed every Server Action but never rendered a form.

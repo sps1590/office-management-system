@@ -95,6 +95,14 @@ UTC from a `datetime-local` field and rendered in the server's zone rather
 than the tenant's. See the changelog entry — it spans every timestamp in the
 app and is its own piece of work.
 
+### Verified on the deployed app, 2026-11-05
+
+The fixes above were then re-tested in Chrome against the live Vercel
+deployment, not only locally: a refused registration keeps what was typed,
+and the first employee can be added. The smoke tenant was deleted afterwards.
+That run surfaced the cross-region latency problem recorded under
+"Known gaps and risks".
+
 ## What's built
 
 **Foundation**
@@ -196,6 +204,14 @@ app and is its own piece of work.
 
 ## Known gaps and risks
 
+- **Production is slow because the functions and the database are in
+  different regions.** Functions run in `iad1` (Washington), the Neon database
+  is in `ap-southeast-1` (Singapore), so every query crosses the Pacific at
+  about 230 ms. A single-query API call takes ~400 ms to first byte and
+  registering a company takes ~45 seconds, since provisioning makes ~40
+  sequential writes that the HTTP driver cannot batch. Invisible in
+  development, where the server is near the database. See the 2026-11-05
+  changelog entry for the two ways to fix it; both are the owner's call.
 - **Timezones are wrong for any tenant not on UTC.** A `datetime-local` value
   is stored as though it were UTC, and timestamps render in the server's zone
   rather than `tenants.timezone`. Production is UTC at both ends so it reads
