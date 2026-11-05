@@ -158,7 +158,20 @@ export async function createEmployeeAction(
   const tempPassword = `Oms-${Math.random().toString(36).slice(2, 8)}${Math.floor(
     Math.random() * 90 + 10
   )}`;
-  const code = d.employeeCode ?? (await nextDocNumber(user.tenant_id, "asset", "EMP"));
+  if (d.employeeCode) {
+    const codeClash = await db`
+      SELECT 1 FROM users
+       WHERE tenant_id = ${user.tenant_id} AND employee_code = ${d.employeeCode}
+    `;
+    if (codeClash.length > 0) {
+      return { fieldErrors: { employeeCode: ["That employee code is already used."] } };
+    }
+  }
+  // Kind "employee", not "asset": provisioning seeds the employee sequence at 2
+  // because it hands the registering admin EMP-00001, and drawing from the
+  // asset sequence instead handed the first employee EMP-00001 a second time --
+  // a unique-violation that crashed the page on every company's first hire.
+  const code = d.employeeCode ?? (await nextDocNumber(user.tenant_id, "employee", "EMP"));
 
   const inserted = await db`
     INSERT INTO users (tenant_id, role_id, department_id, line_manager_id, full_name,

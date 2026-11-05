@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect } from "react";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import SubmitButton from "@/components/SubmitButton";
 import FieldError from "@/components/FieldError";
 import { cn } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
+import { usePreservedForm } from "./usePreservedForm";
 
 /**
  * One form component driven by a field spec, used by every straightforward
@@ -70,17 +71,21 @@ export default function AutoForm({
   compact?: boolean;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(action, null);
-  const ref = useRef<HTMLFormElement>(null);
+  const preserved = usePreservedForm(state);
 
   useEffect(() => {
-    if (resetOnSuccess && state?.success) ref.current?.reset();
-  }, [state?.success, resetOnSuccess]);
+    if (resetOnSuccess && state?.success) preserved.ref.current?.reset();
+  }, [state?.success, resetOnSuccess, preserved.ref]);
 
   const gridCols =
     columns === 1 ? "grid-cols-1" : columns === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3";
 
   return (
-    <form action={formAction} ref={ref} className={compact ? "space-y-3" : "space-y-4"}>
+    <form
+      action={formAction}
+      className={compact ? "space-y-3" : "space-y-4"}
+      {...preserved}
+    >
       {Object.entries(hidden ?? {}).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}

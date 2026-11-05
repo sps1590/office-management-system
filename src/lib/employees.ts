@@ -16,6 +16,7 @@ export type EmployeeListRow = {
   department_name: string | null;
   line_manager_name: string | null;
   date_of_joining: string | null;
+  last_login_at: string | null;
 };
 
 export type EmployeeDetail = EmployeeListRow & {
@@ -54,7 +55,7 @@ export async function listEmployees(
   const q = filters.q?.trim() ? `%${filters.q.trim()}%` : null;
   const rows = await db`
     SELECT u.id, u.full_name, u.email, u.phone, u.employee_code, u.designation,
-           u.status, u.avatar_url, u.department_id,
+           u.status, u.avatar_url, u.department_id, u.last_login_at,
            r.role_name, r.key AS role_key,
            d.name AS department_name,
            m.full_name AS line_manager_name,

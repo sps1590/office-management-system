@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import Logo from "./Logo";
+import { Toaster } from "./Toast";
 import { NAV, NAV_FLAT } from "@/lib/nav";
 import { logoutAction, setThemeAction } from "@/lib/actions/auth";
 import { cn } from "@/lib/utils";
@@ -245,6 +246,8 @@ export default function AppShell({
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full">{children}</main>
       </div>
+
+      <Toaster />
 
       {paletteOpen && (
         <CommandPalette

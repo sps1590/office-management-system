@@ -178,7 +178,9 @@ export default async function PurchaseOrderPage({
           <Card title="Approval trail" bodyClassName="p-0">
             {approvals.length === 0 ? (
               <p className="px-5 py-5 text-sm text-fg-subtle">
-                Not submitted for approval yet.
+                {header.status === "draft" || header.status === "cancelled"
+                  ? "Not submitted for approval yet."
+                  : "Released without an approval step — no other active user could approve it. Add a second user to get a real approval chain."}
               </p>
             ) : (
               <ol className="divide-y divide-border">

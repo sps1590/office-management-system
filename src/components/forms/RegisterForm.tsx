@@ -5,16 +5,18 @@ import { AlertCircle } from "lucide-react";
 import { registerAction } from "@/lib/actions/auth";
 import SubmitButton from "@/components/SubmitButton";
 import FieldError from "@/components/FieldError";
+import { usePreservedForm } from "./usePreservedForm";
 import type { ActionState } from "@/lib/types";
 
 const CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR", "AED", "SAR", "MYR", "SGD"];
 
 export default function RegisterForm() {
   const [state, action] = useActionState<ActionState, FormData>(registerAction, null);
+  const preserved = usePreservedForm(state);
   const fe = state?.fieldErrors;
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-4" {...preserved}>
       {state?.error && (
         <div className="alert alert-error flex items-start gap-2" role="alert">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />

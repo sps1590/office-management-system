@@ -29,6 +29,21 @@ drift stale.
   action, the shared `SubmitButton`, and the `.card` / `.input` / `.label` /
   `.btn-*` classes from `globals.css`. Do not introduce a second form styling
   approach or a form library.
+- **Every uncontrolled form spreads `usePreservedForm(state)` onto its
+  `<form>`.** React empties an uncontrolled form once its action completes,
+  refusals included, so without it one invalid field discards everything the
+  person typed. `AutoForm` already does this, so a screen built on `AutoForm`
+  needs nothing.
+- **A success message belongs in the toast, a refusal next to the control.**
+  An action that succeeds usually changes a record's status, which renders a
+  different set of buttons — the control unmounts in the same commit that
+  carried its success, so anything rendered from its own state is never seen.
+  `ActionButton` already raises successes through `toast()`; a refusal leaves
+  the record alone, so it stays inline where it was caused.
+- **A new `nextDocNumber` kind is a new entry in its union, not the nearest
+  existing one.** Reusing another kind's sequence silently shares a counter
+  and collides with whatever `provision.ts` seeded — that is how every
+  company's first employee came to clash with its admin's `EMP-00001`.
 - Validate every new action input with `zod`, in a schema declared next to the
   action. No hand-parsed `FormData`.
 - Colours come from the CSS custom properties in `globals.css` and must work

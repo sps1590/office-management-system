@@ -11,7 +11,16 @@ import { getDb } from "./db";
  */
 export async function nextDocNumber(
   tenantId: string,
-  kind: "po" | "invoice" | "bill" | "expense" | "asset" | "vendor" | "client" | "visitor",
+  kind:
+    | "po"
+    | "invoice"
+    | "bill"
+    | "expense"
+    | "asset"
+    | "employee"
+    | "vendor"
+    | "client"
+    | "visitor",
   prefix: string
 ): Promise<string> {
   const db = await getDb();

@@ -5,13 +5,15 @@ import { AlertCircle } from "lucide-react";
 import { loginAction } from "@/lib/actions/auth";
 import SubmitButton from "@/components/SubmitButton";
 import FieldError from "@/components/FieldError";
+import { usePreservedForm } from "./usePreservedForm";
 import type { ActionState } from "@/lib/types";
 
 export default function LoginForm() {
   const [state, action] = useActionState<ActionState, FormData>(loginAction, null);
+  const preserved = usePreservedForm(state);
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-4" {...preserved}>
       {state?.error && (
         <div className="alert alert-error flex items-start gap-2" role="alert">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />

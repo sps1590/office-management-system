@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { MapPin, MapPinOff } from "lucide-react";
 import SubmitButton from "./SubmitButton";
+import { usePreservedForm } from "./forms/usePreservedForm";
 import { cn } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
@@ -34,6 +35,7 @@ export default function GeoActionForm({
   required?: boolean;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(action, null);
+  const preserved = usePreservedForm(state);
   const [coords, setCoords] = useState<GeolocationCoordinates | null>(null);
   const [denied, setDenied] = useState(false);
 
@@ -50,7 +52,7 @@ export default function GeoActionForm({
   }, []);
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form action={formAction} className="space-y-3" {...preserved}>
       {Object.entries(hidden ?? {}).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}

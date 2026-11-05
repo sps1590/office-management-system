@@ -3,6 +3,90 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-05 — Clicked through the UI; six defects above the action layer
+
+The previous entry executed every Server Action but never rendered a form.
+This one drove the real browser against a real company: register, add an
+employee, a vendor, a client, a deal, a room, a booking, a purchase order,
+receive it into stock. Everything found here was invisible to the build, to
+both static checks and to the 70-write harness, because it lives in JSX, in
+React's form behaviour, or in a sequence that only collides on a company's
+first hire.
+
+### Fixed
+- **No company could add its first employee.** Provisioning gives the
+  registering admin `EMP-00001` and seeds a `doc_sequences` row under kind
+  `employee` so the next hire gets `EMP-00002`. `createEmployeeAction` drew
+  from kind **`asset`** instead — a sequence that does not exist yet in a new
+  tenant, so it returned `EMP-00001` a second time and the insert died on
+  `users_tenant_employee_code_idx`. Not a handled error either: the unique
+  violation propagated and the page rendered "This page couldn't load". Now
+  draws from the `employee` kind, with `employee` added to the `nextDocNumber`
+  union (its absence is why `asset` was reached for), and a typed-in duplicate
+  code is reported against the field instead of crashing.
+- **Every form emptied itself when a submission was refused.** React resets an
+  uncontrolled form once its action completes, on a refusal as well as a
+  success, and nothing fed the submitted values back as `defaultValue`. One
+  bad field threw away everything typed — trivial on the login form, costly on
+  the employee form and a purchase order with line items. `usePreservedForm`
+  captures the values on submit and writes them back after the commit that
+  carried the error; password fields are deliberately excluded. Wired into
+  `AutoForm` (which backs most CRUD screens), the register, login, employee
+  and geo forms. Controlled forms were never affected.
+- **No lifecycle action could confirm itself.** `ActionButton` rendered its own
+  success message, but a successful action changes the record's status, which
+  renders a different set of buttons — so the button unmounted in the very
+  commit that delivered its success, taking the message with it. Submitting a
+  purchase order, cancelling a booking, approving anything: all silent. The
+  message is now raised during the action, while the component is still alive,
+  and shown by a `Toaster` in `AppShell`. Its queue lives in the module rather
+  than in component state, because the server re-render that follows
+  `revalidatePath` can remount the toaster — which is exactly when the
+  confirmation is needed.
+- **The approval trail contradicted the status badge.** An order released by
+  the single-user auto-approve path writes no `po_approvals` row, so the trail
+  fell through to "Not submitted for approval yet." directly beneath an
+  **Approved** badge. It now explains the release instead, and keeps the old
+  wording only for a draft or cancelled order.
+- **"Last sign-in" on `/users` showed the date of joining.** A plain wrong
+  field in JSX: `u.date_of_joining` under a "Last sign-in" header, so someone
+  who had never signed in showed a date. `listEmployees` now selects
+  `last_login_at` and the column renders it, with "Never" when it is null.
+- **The finance donut was captioned with an unrelated figure.** "Balance by
+  account type" carried `stats.receivable.outstanding` in its centre, labelled
+  "receivable" — a reader saw "0 receivable" in the middle of a chart about
+  asset and liability balances. It now shows the total posted.
+
+### Verified in the browser
+- Registration, dashboard, employee creation with a generated temporary
+  password, vendor, client, deal, room, booking, a two-line purchase order
+  through draft → submit → auto-approve → receive, and the ledger posting
+  behind it: Inventory debit 29,375 against Accounts Payable credit 29,375,
+  trial balance ✓.
+- Client-side line-item arithmetic on the purchase-order form (21,000 + 6,500
+  = 27,500 subtotal, 29,375 with tax and shipping) matches what was saved.
+- The kanban moves a deal and closes it on a won stage; the room overlap guard
+  refuses a clashing slot with a clear message; validation errors land on the
+  right field and no longer empty the form.
+- All 35 signed-in routes return 200, and `/platform` correctly redirects a
+  non-platform admin away.
+- Dark theme, the command palette and the mobile layout (375px, no horizontal
+  overflow on any page checked) all hold up.
+- The test tenant was deleted afterwards: 0 tenants, users, journal lines,
+  orders, bookings and deals, with the 3 subscription plans intact.
+
+### Known, not fixed
+- **Times are stored and displayed inconsistently across timezones.** A
+  `datetime-local` value is handed to Postgres as a bare timestamp, so a
+  booking made at 10:00 is stored as 10:00 **UTC** regardless of where the
+  person is; `formatDateTime` then renders it in the *server's* zone, not the
+  tenant's. On Vercel both ends are UTC and it looks right, but booking 10:00
+  on a machine in Asia/Dhaka displays as 16:00, and `tenants.timezone` is
+  never consulted. Confirmed against the database (`start_time` came back as
+  `10:00Z` for a 10:00 entry, session `TimeZone` is GMT). The fix spans every
+  timestamp that is written or rendered, plus the attendance and tracking
+  windows, so it is its own piece of work rather than a patch.
+
 ## 2026-11-05 — Every write path executed; two purchase-order dead ends fixed
 
 ### Fixed

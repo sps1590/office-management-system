@@ -32,8 +32,8 @@ Last updated: **2026-11-05**
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
 
-`npm run build` is clean. `npm run check` reports **343 SQL statements across
-108 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
+`npm run build` is clean. `npm run check` reports **344 SQL statements across
+110 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
 
 ### Verified against the live database, 2026-11-05
@@ -75,6 +75,25 @@ That run found and fixed **two purchase-order dead ends**, both detailed in
 500,000, and an order raised by the procurement manager could never be
 approved by anyone. Neither was reachable by reading code or running the
 build — both needed the SQL and the approval resolution to actually execute.
+
+### Clicked through in a browser, 2026-11-05
+
+The whole app was then driven through a real browser against a real company —
+register, employee, vendor, client, deal, room, booking, and a two-line
+purchase order from draft to received — which found **six defects above the
+action layer** that neither the build, the static checks nor the write-path
+harness could see. All six are fixed and listed in
+[CHANGELOG.md](CHANGELOG.md); the two that mattered most were that **no
+company could add its first employee** (an employee code drawn from the wrong
+sequence collided with the admin's, and the unique violation crashed the page
+rather than reporting itself) and that **every form emptied itself when a
+submission was refused** (React resets an uncontrolled form after its action,
+and nothing fed the values back).
+
+One defect is documented but deliberately **not** fixed: times are written as
+UTC from a `datetime-local` field and rendered in the server's zone rather
+than the tenant's. See the changelog entry — it spans every timestamp in the
+app and is its own piece of work.
 
 ## What's built
 
@@ -177,13 +196,21 @@ build — both needed the SQL and the approval resolution to actually execute.
 
 ## Known gaps and risks
 
-- **Write paths have now been executed, but never clicked.** All 70 mutations
-  were run against live Postgres through the real Server Actions (see the
-  2026-11-05 changelog entry), which found and fixed two purchase-order dead
-  ends. What is still untested is the browser layer above them: form markup,
-  `useActionState` wiring, client-side validation messages and the map and
-  chart components. A field name misspelled in JSX would not be caught by
-  anything run so far.
+- **Timezones are wrong for any tenant not on UTC.** A `datetime-local` value
+  is stored as though it were UTC, and timestamps render in the server's zone
+  rather than `tenants.timezone`. Production is UTC at both ends so it reads
+  correctly there, but a 10:00 booking entered on an Asia/Dhaka machine
+  displays as 16:00. This is the one defect found in the browser pass that
+  was left unfixed, because it touches every timestamp written or rendered
+  plus the attendance and tracking windows.
+- **The map has not been seen with data on it.** Leaflet renders its empty
+  state correctly, but no device has reported a position through the UI, so
+  markers, clustering and route playback are still only exercised by the
+  server-side code behind them.
+- **Still no automated test suite.** Everything verified so far was verified
+  once, by hand or by a throwaway harness. A regression would be caught by
+  nothing. The two static checks (`npm run check`) cover tenancy and column
+  existence only.
 - **Two deliberate behaviours that look like bugs.** A sole company admin
   cannot *request* leave, because an approver chain needs somebody other than
   the requester — HR manual entry is the path for recording their own

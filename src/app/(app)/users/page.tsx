@@ -100,7 +100,7 @@ export default async function UsersPage({
                     </td>
                     <td className="text-fg-muted">{u.department_name ?? "—"}</td>
                     <td className="text-fg-muted text-xs">
-                      {u.date_of_joining ? formatDateTime(u.date_of_joining) : "—"}
+                      {u.last_login_at ? formatDateTime(u.last_login_at) : "Never"}
                     </td>
                     <td>
                       <StatusBadge status={u.status} />

@@ -10,6 +10,7 @@ import {
 import SubmitButton from "@/components/SubmitButton";
 import FieldError from "@/components/FieldError";
 import { Card } from "@/components/ui";
+import { usePreservedForm } from "./usePreservedForm";
 import type { ActionState } from "@/lib/types";
 import type { EmployeeDetail } from "@/lib/employees";
 
@@ -34,11 +35,12 @@ export default function EmployeeForm({
     employee ? updateEmployeeAction : createEmployeeAction,
     null
   );
+  const preserved = usePreservedForm(state);
   const fe = state?.fieldErrors;
   const e = employee;
 
   return (
-    <form action={action} className="space-y-4 max-w-4xl">
+    <form action={action} className="space-y-4 max-w-4xl" {...preserved}>
       {employee && <input type="hidden" name="id" value={employee.id} />}
 
       {state?.error && (

@@ -97,8 +97,8 @@ export default async function FinancePage() {
         <Card title="Balance by account type">
           <DonutChart
             data={byType}
-            centerValue={compact(stats.receivable.outstanding)}
-            centerLabel="receivable"
+            centerValue={compact(totalDebit)}
+            centerLabel="posted"
           />
         </Card>
       </div>
