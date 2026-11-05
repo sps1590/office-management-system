@@ -17,6 +17,7 @@ export default async function EmployeePage({
   params: Promise<{ id: string }>;
 }) {
   const user = await requirePermission("employees", "view");
+  const tz = user.tenant.timezone;
   const { id } = await params;
 
   const employee = await getEmployee(user.tenant_id, id);
@@ -27,7 +28,7 @@ export default async function EmployeePage({
   from.setDate(from.getDate() - 29);
 
   const [attendance, leave, directReports] = await Promise.all([
-    attendanceRange(user.tenant_id, id, isoDate(from), isoDate()),
+    attendanceRange(user.tenant_id, id, isoDate(tz, from), isoDate(tz)),
     db`
       SELECT lr.id, lr.start_date, lr.end_date, lr.days, lr.status, lt.name AS leave_type
         FROM leave_requests lr
@@ -44,6 +45,7 @@ export default async function EmployeePage({
   ]);
 
   const currency = user.tenant.currency;
+
   const gross =
     employee.basic_salary +
     employee.house_rent +
@@ -99,15 +101,15 @@ export default async function EmployeePage({
               <Field label="Type">
                 <span className="capitalize">{employee.employment_type ?? "—"}</span>
               </Field>
-              <Field label="Joined">{formatDate(employee.date_of_joining)}</Field>
+              <Field label="Joined">{formatDate(employee.date_of_joining, tz)}</Field>
               {employee.probation_end_date && (
-                <Field label="Probation ends">{formatDate(employee.probation_end_date)}</Field>
+                <Field label="Probation ends">{formatDate(employee.probation_end_date, tz)}</Field>
               )}
               {employee.contract_end_date && (
-                <Field label="Contract ends">{formatDate(employee.contract_end_date)}</Field>
+                <Field label="Contract ends">{formatDate(employee.contract_end_date, tz)}</Field>
               )}
               <Field label="Last sign-in">
-                {employee.last_login_at ? formatDateTime(employee.last_login_at) : "Never"}
+                {employee.last_login_at ? formatDateTime(employee.last_login_at, tz) : "Never"}
               </Field>
             </dl>
           </Card>
@@ -183,9 +185,9 @@ export default async function EmployeePage({
                   <tbody>
                     {attendance.map((a) => (
                       <tr key={a.id}>
-                        <td>{formatDate(a.work_date)}</td>
-                        <td>{formatTime(a.check_in_at)}</td>
-                        <td>{formatTime(a.check_out_at)}</td>
+                        <td>{formatDate(a.work_date, tz)}</td>
+                        <td>{formatTime(a.check_in_at, tz)}</td>
+                        <td>{formatTime(a.check_out_at, tz)}</td>
                         <td className="right">{duration(a.worked_minutes)}</td>
                         <td className="right">
                           {a.overtime_minutes > 0 ? duration(a.overtime_minutes) : "—"}
@@ -221,7 +223,7 @@ export default async function EmployeePage({
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{l.leave_type}</p>
                         <p className="text-xs text-fg-subtle">
-                          {formatDate(l.start_date)} – {formatDate(l.end_date)} · {l.days} day
+                          {formatDate(l.start_date, tz)} – {formatDate(l.end_date, tz)} · {l.days} day
                           {Number(l.days) === 1 ? "" : "s"}
                         </p>
                       </div>

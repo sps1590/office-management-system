@@ -20,6 +20,7 @@ export default async function UsersPage({
   // Hard-coded to the company admin: letting the permission matrix govern who
   // may edit the permission matrix would be a privilege-escalation path.
   const user = await requireCompanyAdmin();
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [users, roles] = await Promise.all([
@@ -100,7 +101,7 @@ export default async function UsersPage({
                     </td>
                     <td className="text-fg-muted">{u.department_name ?? "—"}</td>
                     <td className="text-fg-muted text-xs">
-                      {u.last_login_at ? formatDateTime(u.last_login_at) : "Never"}
+                      {u.last_login_at ? formatDateTime(u.last_login_at, tz) : "Never"}
                     </td>
                     <td>
                       <StatusBadge status={u.status} />

@@ -1,5 +1,9 @@
 import "server-only";
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import {
+  neon,
+  types as pgTypes,
+  type NeonQueryFunction,
+} from "@neondatabase/serverless";
 import { SCHEMA_STATEMENTS } from "./schema";
 import { SYSTEM_ROLES } from "./modules";
 
@@ -32,6 +36,24 @@ function connect(): NeonQueryFunction<false, false> {
   }
   return client;
 }
+
+/** Postgres OID for DATE. */
+const DATE_OID = 1082;
+
+/*
+   A DATE is a calendar day, not an instant. The driver's default parser turns
+   it into a JS Date at the *process's* midnight, and formatting that through
+   a tenant's zone then prints the day before for anyone west of the server --
+   a leave request starting "09 Nov" reading as "08 Nov" in New York. Every
+   row type in this codebase already declares these columns as `string`, so
+   handing back the raw YYYY-MM-DD both matches the types and keeps the day
+   out of any zone's reach. TIMESTAMPTZ is untouched: it really is an instant.
+
+   Set on the shared registry rather than passed to `neon()`, because the HTTP
+   driver reads a `types` option only from per-query options and ignores the
+   one given to the connection.
+*/
+pgTypes.setTypeParser(DATE_OID, (value: string) => value);
 
 const DEFAULT_PLANS = [
   {

@@ -31,6 +31,8 @@ export default async function ProcurementPage({
   ]);
 
   const currency = user.tenant.currency;
+
+  const tz = user.tenant.timezone;
   const canCreate = hasPermission(user, "procurement", "create");
 
   return (
@@ -174,8 +176,8 @@ export default async function ProcurementPage({
                       </span>
                     </td>
                     <td className="text-fg-muted">{po.vendor_name}</td>
-                    <td className="text-fg-muted">{formatDate(po.order_date)}</td>
-                    <td className="text-fg-muted">{formatDate(po.expected_date)}</td>
+                    <td className="text-fg-muted">{formatDate(po.order_date, tz)}</td>
+                    <td className="text-fg-muted">{formatDate(po.expected_date, tz)}</td>
                     <td className="right">{po.item_count}</td>
                     <td className="right font-semibold">
                       {money(po.total_amount, currency)}

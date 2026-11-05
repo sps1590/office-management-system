@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
+import { zonedToSql } from "@/lib/utils";
 import { nextDocNumber } from "@/lib/sequence";
 import { findFreeSlots, slotLabel } from "@/lib/workplace";
 import { audit, notify } from "@/lib/audit";
@@ -124,6 +125,15 @@ export async function bookRoomAction(
   const d = parsed.data;
   const db = await getDb();
 
+  // The typed clock is the company's, not the server's or the database's.
+  const startAt = zonedToSql(d.startTime, user.tenant.timezone);
+  const endAt = zonedToSql(d.endTime, user.tenant.timezone);
+  // Both are required, so an unparseable clock is a refusal rather than a
+  // null reaching a NOT NULL column.
+  if (!startAt || !endAt) {
+    return { fieldErrors: { startTime: ["Pick a valid date and time."] } };
+  }
+
   const rooms = await db`
     SELECT name, capacity, status FROM rooms
      WHERE id = ${d.roomId} AND tenant_id = ${user.tenant_id}
@@ -145,7 +155,7 @@ export async function bookRoomAction(
     SELECT start_time, end_time FROM room_bookings
      WHERE tenant_id = ${user.tenant_id} AND room_id = ${d.roomId}
        AND status = 'confirmed'
-       AND start_time < ${d.endTime} AND end_time > ${d.startTime}
+       AND start_time < ${endAt} AND end_time > ${startAt}
      ORDER BY start_time
      LIMIT 1
   `;
@@ -154,12 +164,18 @@ export async function bookRoomAction(
     // sticks, so the refusal carries the clash it hit and the room's next
     // free windows, each one click away from being the new request.
     const taken = overlap[0] as { start_time: string; end_time: string };
-    const busyAt = slotLabel(taken.start_time, taken.end_time, d.startTime);
+    const busyAt = slotLabel(
+      taken.start_time,
+      taken.end_time,
+      startAt,
+      user.tenant.timezone
+    );
     const free = await findFreeSlots(
       user.tenant_id,
       d.roomId,
       d.startTime,
-      d.endTime
+      d.endTime,
+      user.tenant.timezone
     );
     return {
       error:
@@ -177,7 +193,7 @@ export async function bookRoomAction(
     INSERT INTO room_bookings (tenant_id, room_id, booked_by, title, purpose,
                                start_time, end_time, attendee_count, status)
     VALUES (${user.tenant_id}, ${d.roomId}, ${user.id}, ${d.title}, ${d.purpose},
-            ${d.startTime}, ${d.endTime}, ${d.attendeeCount}, 'confirmed')
+            ${startAt}, ${endAt}, ${d.attendeeCount}, 'confirmed')
   `;
   await audit({
     tenantId: user.tenant_id,

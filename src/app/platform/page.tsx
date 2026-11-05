@@ -81,7 +81,7 @@ export default async function PlatformPage() {
                   <th className="right">Users</th>
                   <th className="right">GPS points, 24h</th>
                   <th>Last sign-in</th>
-                  <th>Created</th>
+                  <th>Created (UTC)</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -101,7 +101,7 @@ export default async function PlatformPage() {
                       {t.plan_name ?? t.plan_key}
                       {t.trial_ends_on && t.status === "trial" && (
                         <span className="block text-xs text-fg-subtle">
-                          trial ends {formatDate(t.trial_ends_on)}
+                          trial ends {formatDate(t.trial_ends_on, "UTC")}
                         </span>
                       )}
                     </td>
@@ -113,7 +113,7 @@ export default async function PlatformPage() {
                     <td className="text-fg-muted text-xs">
                       {t.last_login_at ? relativeTime(t.last_login_at) : "Never"}
                     </td>
-                    <td className="text-fg-muted">{formatDate(t.created_at)}</td>
+                    <td className="text-fg-muted">{formatDate(t.created_at, "UTC")}</td>
                     <td>
                       <StatusBadge status={t.status} />
                     </td>

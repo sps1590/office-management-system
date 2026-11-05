@@ -14,6 +14,7 @@ export default async function PayrollPage() {
   const user = await requirePermission("payroll", "view");
   const seesAll = canSeeEveryone(user, "payroll");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   const [runs, mine] = await Promise.all([
     seesAll ? listPayrollRuns(user.tenant_id) : [],
@@ -109,9 +110,9 @@ export default async function PayrollPage() {
                           </td>
                           <td className="text-fg-muted">
                             {r.paid_at
-                              ? `Paid ${formatDate(r.paid_at)}`
+                              ? `Paid ${formatDate(r.paid_at, tz)}`
                               : r.processed_at
-                                ? formatDate(r.processed_at)
+                                ? formatDate(r.processed_at, tz)
                                 : "—"}
                           </td>
                         </tr>

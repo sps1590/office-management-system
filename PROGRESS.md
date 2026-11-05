@@ -13,7 +13,7 @@ alone what exists, what does not, and why decisions were made.
 - Dated history of changes: [CHANGELOG.md](CHANGELOG.md).
 - Conventions an agent must follow: [CLAUDE.md](CLAUDE.md).
 
-Last updated: **2026-11-05**
+Last updated: **2026-11-06**
 
 ---
 
@@ -152,6 +152,9 @@ That run surfaced the cross-region latency problem recorded under
   and profit-and-loss derived from the journal; multi-line invoices,
   purchase-order-aware bills, receipts and payments, expense claims with a
   two-step approve-then-reimburse treatment, manual journal entry.
+- **Time**: every wall clock is stored and rendered through
+  `tenants.timezone`, chosen from the IANA list in Settings and taken from the
+  browser at registration; DATE columns stay zone-free calendar days.
 - **Workplace**: meeting rooms whose overlap refusal names the clash and
   offers the room's next free windows as one-click alternatives, visitor register
   that notifies the host, asset register with chain-of-custody history,
@@ -213,13 +216,14 @@ That run surfaced the cross-region latency problem recorded under
   sequential writes that the HTTP driver cannot batch. Invisible in
   development, where the server is near the database. See the 2026-11-05
   changelog entry for the two ways to fix it; both are the owner's call.
-- **Timezones are wrong for any tenant not on UTC.** A `datetime-local` value
-  is stored as though it were UTC, and timestamps render in the server's zone
-  rather than `tenants.timezone`. Production is UTC at both ends so it reads
-  correctly there, but a 10:00 booking entered on an Asia/Dhaka machine
-  displays as 16:00. This is the one defect found in the browser pass that
-  was left unfixed, because it touches every timestamp written or rendered
-  plus the attendance and tracking windows.
+- **Date-based counters still use the database's UTC day.** Timezones are
+  otherwise fixed (2026-11-06): `tenants.timezone` now decides how every wall
+  clock is stored and rendered. What remains is the aggregate queries that
+  compare a DATE column against `CURRENT_DATE` — overdue invoices and bills,
+  "this month" totals, documents expiring within 30 days, on-leave-today.
+  Those can be a day out for the few hours each day when the company's date
+  and UTC's differ. Fixing them means threading the zone into about twenty
+  more query functions for a counter that drifts by one.
 - **The map has not been seen with data on it.** Leaflet renders its empty
   state correctly, but no device has reported a position through the UI, so
   markers, clustering and route playback are still only exercised by the

@@ -55,9 +55,12 @@ export function usePreservedForm(state: ActionState) {
     const form = ref.current;
     if (!values || !form) return;
 
-    // After the commit, so the restore lands on top of React's own reset
-    // rather than under it.
-    const frame = requestAnimationFrame(() => {
+    // A task after the commit, so the restore lands on top of React's own
+    // reset rather than under it. Deliberately not requestAnimationFrame:
+    // that waits for a paint, and a tab in the background never paints, so
+    // the one case where someone is most likely to lose their typing -- they
+    // submitted and looked away -- is the case where it would never run.
+    const timer = setTimeout(() => {
       const current = fields(form);
       if (current.length !== values.length) return;
       current.forEach((field, i) => {
@@ -67,8 +70,8 @@ export function usePreservedForm(state: ActionState) {
           field.value = values[i];
         }
       });
-    });
-    return () => cancelAnimationFrame(frame);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [rejected, state]);
 
   return { ref, onSubmit: capture };

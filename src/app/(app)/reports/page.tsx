@@ -18,13 +18,14 @@ export const metadata: Metadata = { title: "Reports" };
 export default async function ReportsPage() {
   const user = await requirePermission("reports", "view");
   const currency = user.tenant.currency;
-  const year = new Date().getFullYear();
+  const tz = user.tenant.timezone;
+  const year = Number(isoDate(tz).slice(0, 4));
 
   const [people, attendance, trend, fleet, fleetCost, inventory, procurement, vendorSpend, crm, funnel, finance, cash, pnl] =
     await Promise.all([
       employeeStats(user.tenant_id),
-      attendanceSummary(user.tenant_id, isoDate()),
-      attendanceTrend(user.tenant_id, 30),
+      attendanceSummary(user.tenant_id, isoDate(tz)),
+      attendanceTrend(user.tenant_id, tz, 30),
       fleetStats(user.tenant_id),
       fleetCostTrend(user.tenant_id),
       inventoryStats(user.tenant_id),
@@ -34,7 +35,7 @@ export default async function ReportsPage() {
       pipelineByStage(user.tenant_id),
       financeStats(user.tenant_id),
       cashFlowTrend(user.tenant_id, 6),
-      incomeStatement(user.tenant_id, `${year}-01-01`, isoDate()),
+      incomeStatement(user.tenant_id, `${year}-01-01`, isoDate(tz)),
     ]);
 
   const can = (m: Parameters<typeof hasPermission>[1]) => hasPermission(user, m, "view");

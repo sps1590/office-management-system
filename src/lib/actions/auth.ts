@@ -16,7 +16,7 @@ import { getDb } from "@/lib/db";
 import { provisionTenant } from "@/lib/provision";
 import { allow, loginBucket, signupBucket } from "@/lib/rate-limit";
 import { audit } from "@/lib/audit";
-import { slugify } from "@/lib/utils";
+import { isKnownTimeZone, slugify } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
 // Deliberately identical for "no such account" and "wrong password", so the
@@ -84,6 +84,7 @@ const registerSchema = z
     phone: z.string().trim().max(32).optional(),
     country: z.string().trim().max(60).optional(),
     currency: z.string().trim().length(3).default("BDT"),
+    timezone: z.string().trim().max(60).optional(),
     password: z
       .string()
       .min(8, "Use at least 8 characters")
@@ -109,6 +110,7 @@ export async function registerAction(
     phone: formData.get("phone") || undefined,
     country: formData.get("country") || undefined,
     currency: formData.get("currency") || "BDT",
+    timezone: formData.get("timezone") || undefined,
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
   });
@@ -152,6 +154,10 @@ export async function registerAction(
     phone: data.phone ?? null,
     country: data.country ?? null,
     currency: data.currency.toUpperCase(),
+    // An unknown string here would make every page fall back to UTC, so
+    // only a zone the runtime recognises is kept.
+    timezone:
+      data.timezone && isKnownTimeZone(data.timezone) ? data.timezone : undefined,
   });
 
   await createSession(userId, tenantId);

@@ -9,6 +9,7 @@ import {
   requirePlatformAdmin,
 } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
+import { isKnownTimeZone } from "@/lib/utils";
 import { audit } from "@/lib/audit";
 import type { ActionState } from "@/lib/types";
 
@@ -191,7 +192,13 @@ export async function updateCompanyAction(
       address: z.string().trim().max(400).optional(),
       country: z.string().trim().max(80).optional(),
       currency: z.string().trim().length(3),
-      timezone: z.string().trim().max(60),
+      // A zone every page then formats through, so a typo is refused here
+      // rather than quietly turning the whole company's clock into UTC.
+      timezone: z
+        .string()
+        .trim()
+        .max(60)
+        .refine(isKnownTimeZone, "Not a timezone this system knows"),
     })
     .safeParse({
       companyName: formData.get("companyName") ?? "",

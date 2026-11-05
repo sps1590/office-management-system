@@ -28,9 +28,10 @@ export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  const tz = user.tenant.timezone;
   const [data, today, settings] = await Promise.all([
-    loadDashboard(user.tenant_id, user.id),
-    todaysAttendance(user.tenant_id, user.id),
+    loadDashboard(user.tenant_id, user.id, tz),
+    todaysAttendance(user.tenant_id, user.id, tz),
     getSettings(user.tenant_id),
   ]);
 
@@ -45,6 +46,7 @@ export default async function DashboardPage() {
       <PageHeader
         title={`${greeting}, ${firstName}`}
         description={`${user.tenant.company_name} · ${new Date().toLocaleDateString("en-GB", {
+          timeZone: tz,
           weekday: "long",
           day: "numeric",
           month: "long",
@@ -62,6 +64,7 @@ export default async function DashboardPage() {
       {/* Personal row: attendance plus whatever is waiting on this person. */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <CheckInWidget
+          timeZone={tz}
           checkedInAt={today?.check_in_at ?? null}
           checkedOutAt={today?.check_out_at ?? null}
           workedMinutes={today?.worked_minutes ?? 0}
@@ -86,7 +89,7 @@ export default async function DashboardPage() {
           value={data.myTasks.length}
           sub={
             data.myTasks[0]?.due_date
-              ? `Next due ${formatDate(data.myTasks[0].due_date)}`
+              ? `Next due ${formatDate(data.myTasks[0].due_date, tz)}`
               : "No deadlines set"
           }
           icon={<CheckCircle2 size={16} />}
@@ -200,7 +203,7 @@ export default async function DashboardPage() {
                       <StatusBadge status={t.priority} />
                     </div>
                     <p className="mt-1 text-xs text-fg-subtle">
-                      {t.due_date ? `Due ${formatDate(t.due_date)}` : "No due date"} ·{" "}
+                      {t.due_date ? `Due ${formatDate(t.due_date, tz)}` : "No due date"} ·{" "}
                       {t.status.replace(/_/g, " ")}
                     </p>
                   </Link>

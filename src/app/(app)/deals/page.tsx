@@ -35,6 +35,7 @@ export default async function DealsPage() {
   const canCreate = hasPermission(user, "crm", "create");
   const canEdit = hasPermission(user, "crm", "edit");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   const openStages = stages.filter((s) => !s.is_won && !s.is_lost);
   const winRate = percent(stats.won_count, stats.won_count + stats.lost_count);
@@ -126,7 +127,7 @@ export default async function DealsPage() {
                         </div>
                         {d.expected_close_date && (
                           <p className="mt-1 text-xs text-fg-subtle">
-                            Closes {formatDate(d.expected_close_date)}
+                            Closes {formatDate(d.expected_close_date, tz)}
                           </p>
                         )}
                         {canEdit && (
@@ -183,7 +184,7 @@ export default async function DealsPage() {
                           <td className="text-fg-muted">{d.client_name ?? "—"}</td>
                           <td className="text-fg-muted">{d.owner_name ?? "—"}</td>
                           <td className="right">{money(d.value, currency)}</td>
-                          <td className="text-fg-muted">{formatDate(d.closed_at)}</td>
+                          <td className="text-fg-muted">{formatDate(d.closed_at, tz)}</td>
                           <td>
                             <span
                               className={

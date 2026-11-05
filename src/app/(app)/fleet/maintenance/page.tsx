@@ -12,7 +12,7 @@ import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
 import FilterBar from "@/components/FilterBar";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
-import { formatDate, money, num } from "@/lib/utils";
+import { formatDate, isoDate, money, num } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Fleet maintenance" };
 
@@ -33,13 +33,14 @@ export default async function MaintenancePage({
   const canCreate = hasPermission(user, "fleet", "create");
   const canEdit = hasPermission(user, "fleet", "edit");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   const open = records.filter((r) => r.status !== "completed" && r.status !== "cancelled");
   const overdue = open.filter(
     (r) => r.scheduled_date && new Date(r.scheduled_date).getTime() < Date.now()
   );
   const spendThisYear = records
-    .filter((r) => r.completed_date?.startsWith(String(new Date().getFullYear())))
+    .filter((r) => r.completed_date?.startsWith(isoDate(tz).slice(0, 4)))
     .reduce((s, r) => s + r.cost, 0);
 
   return (
@@ -121,14 +122,14 @@ export default async function MaintenancePage({
                           )}
                         </td>
                         <td className={isOverdue ? "text-danger font-medium" : "text-fg-muted"}>
-                          {formatDate(r.scheduled_date)}
+                          {formatDate(r.scheduled_date, tz)}
                         </td>
-                        <td className="text-fg-muted">{formatDate(r.completed_date)}</td>
+                        <td className="text-fg-muted">{formatDate(r.completed_date, tz)}</td>
                         <td className="text-fg-muted">{r.vendor_name ?? "—"}</td>
                         <td className="right">{r.cost > 0 ? money(r.cost, currency) : "—"}</td>
                         <td className="text-fg-muted">
                           {r.next_due_date
-                            ? formatDate(r.next_due_date)
+                            ? formatDate(r.next_due_date, tz)
                             : r.next_due_odometer
                               ? `${num(r.next_due_odometer)} km`
                               : "—"}

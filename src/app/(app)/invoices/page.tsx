@@ -30,6 +30,7 @@ export default async function InvoicesPage({
 
   const canCreate = hasPermission(user, "invoicing", "create");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
   const unpaid = invoices.filter(
     (i) => i.status !== "paid" && i.status !== "void" && i.status !== "draft"
   );
@@ -118,9 +119,9 @@ export default async function InvoicesPage({
                             </span>
                           </td>
                           <td className="text-fg-muted">{i.client_name ?? "—"}</td>
-                          <td className="text-fg-muted">{formatDate(i.issue_date)}</td>
+                          <td className="text-fg-muted">{formatDate(i.issue_date, tz)}</td>
                           <td className={overdue ? "text-danger font-medium" : "text-fg-muted"}>
-                            {formatDate(i.due_date)}
+                            {formatDate(i.due_date, tz)}
                           </td>
                           <td className="right">{money(i.total_amount, currency)}</td>
                           <td className="right">{money(i.amount_paid, currency)}</td>
@@ -158,7 +159,7 @@ export default async function InvoicesPage({
                   <tbody>
                     {payments.map((p) => (
                       <tr key={p.id}>
-                        <td className="text-fg-muted">{formatDate(p.paid_on)}</td>
+                        <td className="text-fg-muted">{formatDate(p.paid_on, tz)}</td>
                         <td>
                           <span
                             className={
@@ -190,7 +191,7 @@ export default async function InvoicesPage({
                 clients={clients.map((c) => ({ id: c.id, name: c.name }))}
                 deals={deals.map((d) => ({ id: d.id, title: d.title }))}
                 currency={currency}
-                today={isoDate()}
+                today={isoDate(tz)}
               />
             </Card>
 
@@ -227,7 +228,7 @@ export default async function InvoicesPage({
                         (m) => ({ value: m, label: m })
                       ),
                     },
-                    { name: "paidOn", label: "Received on", type: "date", required: true, defaultValue: isoDate() },
+                    { name: "paidOn", label: "Received on", type: "date", required: true, defaultValue: isoDate(tz) },
                     { name: "reference", label: "Reference" },
                   ]}
                 />

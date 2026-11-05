@@ -41,6 +41,7 @@ export default async function InventoryPage({
   const canCreate = hasPermission(user, "inventory", "create");
   const canEdit = hasPermission(user, "inventory", "edit");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   return (
     <>
@@ -173,7 +174,7 @@ export default async function InventoryPage({
                   <tbody>
                     {movements.map((m) => (
                       <tr key={m.id}>
-                        <td className="text-fg-muted text-xs">{formatDateTime(m.created_at)}</td>
+                        <td className="text-fg-muted text-xs">{formatDateTime(m.created_at, tz)}</td>
                         <td className="font-medium">{m.item_name}</td>
                         <td>
                           <span

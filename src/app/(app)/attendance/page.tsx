@@ -26,8 +26,9 @@ export default async function AttendancePage({
   searchParams: Promise<{ date?: string; department?: string }>;
 }) {
   const user = await requirePermission("attendance", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
-  const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : isoDate();
+  const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : isoDate(tz);
 
   const seesTeam = canSeeEveryone(user, "attendance");
   const canEdit = hasPermission(user, "attendance", "edit");
@@ -37,11 +38,11 @@ export default async function AttendancePage({
 
   const [today, settings, mine, summary, trend, team, departments, people] =
     await Promise.all([
-      todaysAttendance(user.tenant_id, user.id),
+      todaysAttendance(user.tenant_id, user.id, tz),
       getSettings(user.tenant_id),
-      attendanceRange(user.tenant_id, user.id, isoDate(monthAgo), isoDate()),
+      attendanceRange(user.tenant_id, user.id, isoDate(tz, monthAgo), isoDate(tz)),
       seesTeam ? attendanceSummary(user.tenant_id, date) : null,
-      seesTeam ? attendanceTrend(user.tenant_id, 21) : null,
+      seesTeam ? attendanceTrend(user.tenant_id, tz, 21) : null,
       seesTeam
         ? attendanceForDate(user.tenant_id, date, { departmentId: sp.department })
         : null,
@@ -67,6 +68,7 @@ export default async function AttendancePage({
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <CheckInWidget
+          timeZone={tz}
           checkedInAt={today?.check_in_at ?? null}
           checkedOutAt={today?.check_out_at ?? null}
           workedMinutes={today?.worked_minutes ?? 0}
@@ -95,7 +97,7 @@ export default async function AttendancePage({
         <>
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mt-4">
             <KpiCard
-              label={`Present on ${formatDate(date)}`}
+              label={`Present on ${formatDate(date, tz)}`}
               value={`${summary.present}/${summary.headcount}`}
               sub={`${summary.still_in} still checked in`}
               icon={<Users size={16} />}
@@ -118,7 +120,7 @@ export default async function AttendancePage({
 
       <div className="grid gap-4 lg:grid-cols-2 mt-4 items-start">
         {seesTeam && team && (
-          <Card title={`Team register — ${formatDate(date)}`} bodyClassName="p-0">
+          <Card title={`Team register — ${formatDate(date, tz)}`} bodyClassName="p-0">
             <FilterBar
               filters={[
                 { name: "date", label: "Date", type: "date", value: date },
@@ -165,8 +167,8 @@ export default async function AttendancePage({
                             </span>
                           </span>
                         </td>
-                        <td>{formatTime(a.check_in_at)}</td>
-                        <td>{formatTime(a.check_out_at)}</td>
+                        <td>{formatTime(a.check_in_at, tz)}</td>
+                        <td>{formatTime(a.check_out_at, tz)}</td>
                         <td className="right">{duration(a.worked_minutes)}</td>
                         <td className="right">
                           {a.overtime_minutes > 0 ? duration(a.overtime_minutes) : "—"}
@@ -215,9 +217,9 @@ export default async function AttendancePage({
                   <tbody>
                     {mine.map((a) => (
                       <tr key={a.id}>
-                        <td>{formatDate(a.work_date)}</td>
-                        <td>{formatTime(a.check_in_at)}</td>
-                        <td>{formatTime(a.check_out_at)}</td>
+                        <td>{formatDate(a.work_date, tz)}</td>
+                        <td>{formatTime(a.check_in_at, tz)}</td>
+                        <td>{formatTime(a.check_out_at, tz)}</td>
                         <td className="right">{duration(a.worked_minutes)}</td>
                         <td>
                           <StatusBadge status={a.status} />

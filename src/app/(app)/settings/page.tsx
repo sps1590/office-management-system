@@ -25,6 +25,17 @@ const ROLE_KEYS = [
 
 export default async function SettingsPage() {
   const user = await requirePermission("settings", "view");
+  const tz = user.tenant.timezone;
+  // Offered as a list rather than a text box: this zone is what every date
+  // in the app is rendered through, so a typo would be felt everywhere.
+  const timeZones = Intl.supportedValuesOf("timeZone");
+  const nowThere = new Date().toLocaleString("en-GB", {
+    timeZone: timeZones.includes(tz) ? tz : "UTC",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
   const settings = await getSettings(user.tenant_id);
   const db = await getDb();
 
@@ -78,9 +89,9 @@ export default async function SettingsPage() {
               {tenant.max_users ? ` of ${tenant.max_users}` : " (unlimited)"}
             </Field>
             {tenant.trial_ends_on && (
-              <Field label="Trial ends">{formatDate(tenant.trial_ends_on)}</Field>
+              <Field label="Trial ends">{formatDate(tenant.trial_ends_on, tz)}</Field>
             )}
-            <Field label="Created">{formatDate(tenant.created_at)}</Field>
+            <Field label="Created">{formatDate(tenant.created_at, tz)}</Field>
           </dl>
         </Card>
 
@@ -95,7 +106,16 @@ export default async function SettingsPage() {
                 { name: "phone", label: "Phone", type: "tel", defaultValue: tenant.phone ?? "" },
                 { name: "country", label: "Country", defaultValue: tenant.country ?? "" },
                 { name: "currency", label: "Currency", required: true, defaultValue: tenant.currency, help: "Three-letter code." },
-                { name: "timezone", label: "Timezone", required: true, defaultValue: tenant.timezone, span: 2 },
+                {
+                  name: "timezone",
+                  label: "Timezone",
+                  type: "select",
+                  required: true,
+                  defaultValue: tenant.timezone,
+                  options: timeZones.map((z) => ({ value: z, label: z })),
+                  help: `Every date and time in the app is shown in this zone. It is ${nowThere} there now.`,
+                  span: 2,
+                },
                 { name: "address", label: "Address", type: "textarea", rows: 2, defaultValue: tenant.address ?? "", span: 2 },
               ]}
             />

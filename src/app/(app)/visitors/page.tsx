@@ -13,6 +13,7 @@ export const metadata: Metadata = { title: "Visitors" };
 
 export default async function VisitorsPage() {
   const user = await requirePermission("facilities", "view");
+  const tz = user.tenant.timezone;
 
   const [visitors, hosts] = await Promise.all([
     listVisitors(user.tenant_id),
@@ -116,11 +117,11 @@ export default async function VisitorsPage() {
                           <span className="block truncate max-w-48">{v.purpose ?? "—"}</span>
                         </td>
                         <td className="text-fg-muted text-xs">
-                          {formatDateTime(v.checked_in_at)}
+                          {formatDateTime(v.checked_in_at, tz)}
                         </td>
                         <td className="text-fg-muted text-xs">
                           {v.checked_out_at ? (
-                            formatDateTime(v.checked_out_at)
+                            formatDateTime(v.checked_out_at, tz)
                           ) : (
                             <span className="badge badge-info">On site</span>
                           )}

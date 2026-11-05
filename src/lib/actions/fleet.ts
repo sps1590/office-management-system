@@ -7,7 +7,7 @@ import { hasPermission, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { postJournal } from "@/lib/ledger";
 import { audit, notify, notifyRoles } from "@/lib/audit";
-import { isoDate } from "@/lib/utils";
+import { isoDate, zonedToSql } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
 const nullable = (max = 200) =>
@@ -207,6 +207,14 @@ export async function createBookingAction(
   }
   const d = parsed.data;
   const db = await getDb();
+  // The typed clock is the company's, not the server's or the database's.
+  const startAt = zonedToSql(d.startTime, user.tenant.timezone);
+  const endAt = zonedToSql(d.endTime, user.tenant.timezone);
+  // Both are required, so an unparseable clock is a refusal rather than a
+  // null reaching a NOT NULL column.
+  if (!startAt || !endAt) {
+    return { fieldErrors: { startTime: ["Pick a valid date and time."] } };
+  }
 
   const vehicle = await db`
     SELECT registration_number, status FROM vehicles
@@ -220,7 +228,7 @@ export async function createBookingAction(
     SELECT 1 FROM vehicle_bookings
      WHERE tenant_id = ${user.tenant_id} AND vehicle_id = ${d.vehicleId}
        AND status IN ('pending','approved','in_progress')
-       AND start_time < ${d.endTime} AND end_time > ${d.startTime}
+       AND start_time < ${endAt} AND end_time > ${startAt}
   `;
   if (overlap.length > 0) {
     return {
@@ -232,7 +240,7 @@ export async function createBookingAction(
     INSERT INTO vehicle_bookings (tenant_id, vehicle_id, driver_id, requested_by, purpose,
                                   destination, start_time, end_time, passengers, status)
     VALUES (${user.tenant_id}, ${d.vehicleId}, ${d.driverId}, ${user.id}, ${d.purpose},
-            ${d.destination}, ${d.startTime}, ${d.endTime}, ${d.passengers}, 'pending')
+            ${d.destination}, ${startAt}, ${endAt}, ${d.passengers}, 'pending')
     RETURNING id
   `;
   const bookingId = (inserted[0] as { id: string }).id;
@@ -468,7 +476,7 @@ export async function completeTripAction(
   const spend = d.fuelCost + d.tollCost;
   if (spend > 0) {
     await postJournal(user.tenant_id, {
-      date: isoDate(),
+      date: isoDate(user.tenant.timezone),
       description: `Trip costs — ${b.registration_number}`,
       source: "trip",
       sourceId: d.bookingId,
@@ -593,7 +601,7 @@ export async function completeMaintenanceAction(
 
   if (finalCost > 0) {
     await postJournal(user.tenant_id, {
-      date: isoDate(),
+      date: isoDate(user.tenant.timezone),
       description: `${m.service_type} — ${m.registration_number}`,
       source: "maintenance",
       sourceId: id,

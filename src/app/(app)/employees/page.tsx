@@ -24,6 +24,7 @@ export default async function EmployeesPage({
   searchParams: Promise<{ q?: string; department?: string; status?: string; role?: string }>;
 }) {
   const user = await requirePermission("employees", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [employees, stats, departments, roles, managers] = await Promise.all([
@@ -152,7 +153,7 @@ export default async function EmployeesPage({
                           <span className="text-fg-subtle">No role</span>
                         )}
                       </td>
-                      <td className="text-fg-muted">{formatDate(e.date_of_joining)}</td>
+                      <td className="text-fg-muted">{formatDate(e.date_of_joining, tz)}</td>
                       <td>
                         <StatusBadge status={e.status} />
                       </td>

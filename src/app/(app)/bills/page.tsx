@@ -28,6 +28,7 @@ export default async function BillsPage({
 
   const canCreate = hasPermission(user, "invoicing", "create");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
   const unpaid = bills.filter((b) => b.status !== "paid" && b.status !== "void");
 
   return (
@@ -100,13 +101,13 @@ export default async function BillsPage({
                         <td>
                           <span className="block font-medium">{b.bill_number}</span>
                           <span className="block text-xs text-fg-subtle">
-                            {formatDate(b.issue_date)}
+                            {formatDate(b.issue_date, tz)}
                           </span>
                         </td>
                         <td className="text-fg-muted">{b.vendor_name ?? "—"}</td>
                         <td className="text-fg-muted">{b.po_number ?? "—"}</td>
                         <td className={overdue ? "text-danger font-medium" : "text-fg-muted"}>
-                          {formatDate(b.due_date)}
+                          {formatDate(b.due_date, tz)}
                         </td>
                         <td className="right">{money(b.total_amount, currency)}</td>
                         <td className="right font-semibold">
@@ -152,7 +153,7 @@ export default async function BillsPage({
                   },
                   { name: "subtotal", label: `Amount (${currency})`, type: "number", required: true, min: 0, step: "0.01" },
                   { name: "taxAmount", label: `Tax (${currency})`, type: "number", min: 0, step: "0.01", defaultValue: 0 },
-                  { name: "issueDate", label: "Bill date", type: "date", required: true, defaultValue: isoDate() },
+                  { name: "issueDate", label: "Bill date", type: "date", required: true, defaultValue: isoDate(tz) },
                   { name: "dueDate", label: "Due date", type: "date" },
                   { name: "notes", label: "Notes", type: "textarea", rows: 2 },
                 ]}
@@ -192,7 +193,7 @@ export default async function BillsPage({
                         (m) => ({ value: m, label: m })
                       ),
                     },
-                    { name: "paidOn", label: "Paid on", type: "date", required: true, defaultValue: isoDate() },
+                    { name: "paidOn", label: "Paid on", type: "date", required: true, defaultValue: isoDate(tz) },
                     { name: "reference", label: "Reference" },
                   ]}
                 />

@@ -22,8 +22,9 @@ export default async function OperationsMapPage({
   searchParams: Promise<{ route?: string; date?: string }>;
 }) {
   const user = await requirePermission("tracking", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
-  const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : isoDate();
+  const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : isoDate(tz);
 
   const [people, fences, sites, stats, events, route] = await Promise.all([
     livePositions(user.tenant_id),
@@ -115,8 +116,8 @@ export default async function OperationsMapPage({
             </p>
           ) : (
             <p className="text-sm text-fg-muted">
-              {route.length} points from {formatTime(route[0].log_timestamp)} to{" "}
-              {formatTime(route[route.length - 1].log_timestamp)}. Overlapping points
+              {route.length} points from {formatTime(route[0].log_timestamp, tz)} to{" "}
+              {formatTime(route[route.length - 1].log_timestamp, tz)}. Overlapping points
               within 25 m are collapsed so a parked vehicle does not hide the route.
             </p>
           )}

@@ -7,7 +7,7 @@ import { requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { audit } from "@/lib/audit";
-import { isoDate } from "@/lib/utils";
+import { isoDate, zonedToInstant } from "@/lib/utils";
 import {
   computeLateMinutes,
   computeOvertimeMinutes,
@@ -46,7 +46,7 @@ export async function checkInAction(
   const db = await getDb();
   const settings = await getSettings(user.tenant_id);
   const { latitude, longitude, accuracy } = readCoords(formData);
-  const today = isoDate();
+  const today = isoDate(user.tenant.timezone);
 
   const existing = await db`
     SELECT id, check_in_at FROM attendance_records
@@ -77,7 +77,7 @@ export async function checkInAction(
   }
 
   const now = new Date();
-  const lateMinutes = computeLateMinutes(now, settings);
+  const lateMinutes = computeLateMinutes(now, settings, user.tenant.timezone);
   const status = lateMinutes > 0 ? "late" : "present";
 
   await db`
@@ -125,7 +125,7 @@ export async function checkOutAction(
   const db = await getDb();
   const settings = await getSettings(user.tenant_id);
   const { latitude, longitude } = readCoords(formData);
-  const today = isoDate();
+  const today = isoDate(user.tenant.timezone);
 
   const rows = await db`
     SELECT id, check_in_at, check_out_at, late_minutes
@@ -220,11 +220,14 @@ export async function manualAttendanceAction(
   `;
   if (target.length === 0) return { error: "Employee not found." };
 
-  const inAt = d.checkIn ? new Date(`${d.workDate}T${d.checkIn}`) : null;
-  const outAt = d.checkOut ? new Date(`${d.workDate}T${d.checkOut}`) : null;
+  // A date and a time typed by HR are the office's wall clock, so they are
+  // resolved through the tenant's zone rather than parsed as the server's.
+  const zone = user.tenant.timezone;
+  const inAt = d.checkIn ? zonedToInstant(`${d.workDate}T${d.checkIn}`, zone) : null;
+  const outAt = d.checkOut ? zonedToInstant(`${d.workDate}T${d.checkOut}`, zone) : null;
   const worked = inAt && outAt ? computeWorkedMinutes(inAt, outAt) : 0;
   const overtime = computeOvertimeMinutes(worked, settings);
-  const late = inAt ? computeLateMinutes(inAt, settings) : 0;
+  const late = inAt ? computeLateMinutes(inAt, settings, user.tenant.timezone) : 0;
 
   await db`
     INSERT INTO attendance_records

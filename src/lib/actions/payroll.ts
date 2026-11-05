@@ -267,7 +267,7 @@ export async function setPayrollStatusAction(
 
   if (status === "paid" && run.net_total > 0) {
     await postJournal(user.tenant_id, {
-      date: isoDate(),
+      date: isoDate(user.tenant.timezone),
       description: `Payroll ${monthName(run.period_month)} ${run.period_year}`,
       source: "payroll",
       sourceId: runId,

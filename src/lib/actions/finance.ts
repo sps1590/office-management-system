@@ -58,7 +58,7 @@ export async function createInvoiceAction(
   const parsed = invoiceSchema.safeParse({
     clientId: formData.get("clientId") ?? "",
     dealId: formData.get("dealId") ?? "",
-    issueDate: formData.get("issueDate") || isoDate(),
+    issueDate: formData.get("issueDate") || isoDate(user.tenant.timezone),
     dueDate: formData.get("dueDate") ?? "",
     taxAmount: formData.get("taxAmount") || 0,
     discountAmount: formData.get("discountAmount") || 0,
@@ -164,7 +164,7 @@ export async function createBillAction(
     vendorId: formData.get("vendorId") ?? "",
     purchaseOrderId: formData.get("purchaseOrderId") ?? "",
     billNumber: formData.get("billNumber") ?? "",
-    issueDate: formData.get("issueDate") || isoDate(),
+    issueDate: formData.get("issueDate") || isoDate(user.tenant.timezone),
     dueDate: formData.get("dueDate") ?? "",
     subtotal: formData.get("subtotal") || 0,
     taxAmount: formData.get("taxAmount") || 0,
@@ -255,7 +255,7 @@ export async function recordPaymentAction(
     billId: formData.get("billId") ?? "",
     amount: formData.get("amount"),
     method: formData.get("method") || "bank",
-    paidOn: formData.get("paidOn") || isoDate(),
+    paidOn: formData.get("paidOn") || isoDate(user.tenant.timezone),
     reference: formData.get("reference") ?? "",
     note: formData.get("note") ?? "",
   });
@@ -382,7 +382,7 @@ export async function createExpenseClaimAction(
   const parsed = claimSchema.safeParse({
     category: formData.get("category") || "other",
     amount: formData.get("amount"),
-    expenseDate: formData.get("expenseDate") || isoDate(),
+    expenseDate: formData.get("expenseDate") || isoDate(user.tenant.timezone),
     description: formData.get("description") ?? "",
   });
   if (!parsed.success) {
@@ -486,13 +486,13 @@ export async function decideExpenseClaimAction(
     UPDATE expense_claims
        SET status = ${decision}, approver_id = ${user.id}, comments = ${comments},
            decided_at = now(),
-           reimbursed_on = ${decision === "reimbursed" ? isoDate() : null}
+           reimbursed_on = ${decision === "reimbursed" ? isoDate(user.tenant.timezone) : null}
      WHERE id = ${claimId} AND tenant_id = ${user.tenant_id}
   `;
 
   if (decision === "approved") {
     await postJournal(user.tenant_id, {
-      date: isoDate(),
+      date: isoDate(user.tenant.timezone),
       description: `Expense claim ${claim.claim_number ?? ""} — ${claim.category}`,
       source: "expense_claim",
       sourceId: claimId,
@@ -504,7 +504,7 @@ export async function decideExpenseClaimAction(
     });
   } else if (decision === "reimbursed") {
     await postJournal(user.tenant_id, {
-      date: isoDate(),
+      date: isoDate(user.tenant.timezone),
       description: `Reimbursed ${claim.full_name} — ${claim.claim_number ?? claim.category}`,
       source: "expense_claim",
       sourceId: claimId,
@@ -554,7 +554,7 @@ export async function createJournalEntryAction(
 ): Promise<ActionState> {
   const user = await requirePermission("finance", "create");
   const parsed = journalSchema.safeParse({
-    entryDate: formData.get("entryDate") || isoDate(),
+    entryDate: formData.get("entryDate") || isoDate(user.tenant.timezone),
     description: formData.get("description") ?? "",
     debitAccountId: formData.get("debitAccountId"),
     creditAccountId: formData.get("creditAccountId"),

@@ -17,6 +17,16 @@ export default function RegisterForm() {
 
   return (
     <form action={action} className="space-y-4" {...preserved}>
+      {/* The browser already knows where this company is, and every date in
+          the app is rendered through the zone chosen here. Sending it saves
+          an office outside Bangladesh from running on Dhaka time until
+          someone notices; Settings can change it afterwards. The server
+          validates it and falls back to the default on anything odd. */}
+      <input
+        type="hidden"
+        name="timezone"
+        value={Intl.DateTimeFormat().resolvedOptions().timeZone ?? ""}
+      />
       {state?.error && (
         <div className="alert alert-error flex items-start gap-2" role="alert">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />

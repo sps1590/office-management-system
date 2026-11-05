@@ -29,6 +29,7 @@ export default async function AssetsPage({
   const canCreate = hasPermission(user, "assets", "create");
   const canEdit = hasPermission(user, "assets", "edit");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   return (
     <>
@@ -121,7 +122,7 @@ export default async function AssetsPage({
                             <StatusBadge status={a.condition} />
                           </td>
                           <td className={warrantySoon ? "text-warning font-medium" : "text-fg-muted"}>
-                            {formatDate(a.warranty_expiry)}
+                            {formatDate(a.warranty_expiry, tz)}
                           </td>
                           <td className="right">
                             {a.current_value != null || a.purchase_cost != null

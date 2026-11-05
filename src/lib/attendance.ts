@@ -2,7 +2,7 @@ import "server-only";
 import { getDb } from "./db";
 import { getSettings } from "./settings";
 import { evaluateFence, type Geofence, type Point } from "./geo";
-import { isoDate } from "./utils";
+import { isoDate, zonedToInstant } from "./utils";
 import type { TenantSettings } from "./types";
 
 export type AttendanceRow = {
@@ -29,11 +29,26 @@ export type AttendanceRow = {
    nine-hour day or a 1.75x overtime rate needs no code change.
    -------------------------------------------------------------------------- */
 
-export function computeLateMinutes(checkInAt: Date, settings: TenantSettings): number {
+export function computeLateMinutes(
+  checkInAt: Date,
+  settings: TenantSettings,
+  timeZone: string
+): number {
   const [h, m] = settings.work_start_time.split(":").map(Number);
-  const expected = new Date(checkInAt);
-  expected.setHours(h, (m ?? 0) + settings.grace_minutes, 0, 0);
-  return Math.max(0, Math.round((checkInAt.getTime() - expected.getTime()) / 60_000));
+  // "Work starts at 09:00" means nine where the office is. Building the
+  // expected moment with setHours would read the server's clock instead --
+  // UTC on Vercel -- and mark a Dhaka office six hours late every morning.
+  const startOfShift = zonedToInstant(
+    `${isoDate(timeZone, checkInAt)}T${String(h || 0).padStart(2, "0")}:${String(
+      m ?? 0
+    ).padStart(2, "0")}`,
+    timeZone
+  );
+  const grace = settings.grace_minutes * 60_000;
+  return Math.max(
+    0,
+    Math.round((checkInAt.getTime() - startOfShift.getTime() - grace) / 60_000)
+  );
 }
 
 export function computeWorkedMinutes(checkInAt: Date, checkOutAt: Date): number {
@@ -84,7 +99,8 @@ export async function matchOfficeGeofence(
 /** Today's record for one user, or null before their first check-in. */
 export async function todaysAttendance(
   tenantId: string,
-  userId: string
+  userId: string,
+  timeZone: string
 ): Promise<AttendanceRow | null> {
   const db = await getDb();
   const rows = await db`
@@ -93,7 +109,7 @@ export async function todaysAttendance(
       JOIN users u ON u.id = a.user_id
       LEFT JOIN departments d ON d.id = u.department_id
      WHERE a.tenant_id = ${tenantId} AND a.user_id = ${userId}
-       AND a.work_date = ${isoDate()}
+       AND a.work_date = ${isoDate(timeZone)}
   `;
   return (rows[0] as AttendanceRow | undefined) ?? null;
 }
@@ -167,15 +183,20 @@ export async function attendanceSummary(tenantId: string, date: string) {
 /** Daily present-count for the last `days` days, for the trend chart. */
 export async function attendanceTrend(
   tenantId: string,
+  timeZone: string,
   days = 14
 ): Promise<{ label: string; value: number }[]> {
   const db = await getDb();
+  // The axis ends on the company's today, not the server's: CURRENT_DATE is
+  // the database's UTC day, which is yesterday for an office in Dhaka until
+  // six in the morning.
+  const today = isoDate(timeZone);
   // generate_series gives a row for every day, so days with no attendance at
   // all still appear as zero instead of vanishing from the chart.
   const rows = await db`
     SELECT to_char(d.day, 'DD Mon') AS label,
            COUNT(a.id) FILTER (WHERE a.status IN ('present','late'))::int AS value
-      FROM generate_series(CURRENT_DATE - ${days - 1}::int, CURRENT_DATE, '1 day') AS d(day)
+      FROM generate_series(${today}::date - ${days - 1}::int, ${today}::date, '1 day') AS d(day)
       LEFT JOIN attendance_records a
              ON a.work_date = d.day AND a.tenant_id = ${tenantId}
      GROUP BY d.day

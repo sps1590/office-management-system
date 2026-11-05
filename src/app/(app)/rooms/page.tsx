@@ -16,6 +16,7 @@ export const metadata: Metadata = { title: "Meeting rooms" };
 
 export default async function RoomsPage() {
   const user = await requirePermission("facilities", "view");
+  const tz = user.tenant.timezone;
 
   const [rooms, bookings] = await Promise.all([
     listRooms(user.tenant_id),
@@ -86,7 +87,7 @@ export default async function RoomsPage() {
                       <div className="flex items-center gap-2 shrink-0">
                         {busy ? (
                           <span className="badge badge-warning" title={busy.title}>
-                            In use until {formatDateTime(busy.end_time).split(", ")[1] ?? ""}
+                            In use until {formatDateTime(busy.end_time, tz).split(", ")[1] ?? ""}
                           </span>
                         ) : (
                           <StatusBadge status={r.status} />
@@ -134,8 +135,8 @@ export default async function RoomsPage() {
                           )}
                         </td>
                         <td className="text-fg-muted">{b.room_name}</td>
-                        <td className="text-fg-muted text-xs">{formatDateTime(b.start_time)}</td>
-                        <td className="text-fg-muted text-xs">{formatDateTime(b.end_time)}</td>
+                        <td className="text-fg-muted text-xs">{formatDateTime(b.start_time, tz)}</td>
+                        <td className="text-fg-muted text-xs">{formatDateTime(b.end_time, tz)}</td>
                         <td className="right">{b.attendee_count}</td>
                         <td className="text-fg-muted">{b.booked_by_name}</td>
                         <td>

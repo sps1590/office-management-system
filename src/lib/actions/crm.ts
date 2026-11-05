@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
+import { zonedToSql } from "@/lib/utils";
 import { distanceMeters } from "@/lib/geo";
 import { nextDocNumber } from "@/lib/sequence";
 import { audit, notify } from "@/lib/audit";
@@ -301,7 +302,7 @@ export async function planVisitAction(
   const inserted = await db`
     INSERT INTO field_visits (tenant_id, user_id, client_id, deal_id, purpose, planned_for, status)
     VALUES (${user.tenant_id}, ${assignee}, ${d.clientId}, ${d.dealId}, ${d.purpose},
-            ${d.plannedFor}, 'planned')
+            ${zonedToSql(d.plannedFor, user.tenant.timezone)}, 'planned')
     RETURNING id
   `;
   if (assignee !== user.id) {

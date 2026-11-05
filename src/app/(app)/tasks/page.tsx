@@ -23,6 +23,7 @@ export default async function TasksPage({
   searchParams: Promise<{ q?: string; status?: string; project?: string; scope?: string }>;
 }) {
   const user = await requirePermission("tasks", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const seesAll = canSeeEveryone(user, "tasks");
@@ -89,7 +90,7 @@ export default async function TasksPage({
                         )}
                         <p className="mt-1 text-xs text-fg-subtle">
                           {t.project_name ? `${t.project_name} · ` : ""}
-                          {t.due_date ? `due ${formatDate(t.due_date)}` : "no due date"}
+                          {t.due_date ? `due ${formatDate(t.due_date, tz)}` : "no due date"}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -209,7 +210,7 @@ export default async function TasksPage({
                             )}
                           </td>
                           <td className={overdue ? "text-danger font-medium" : "text-fg-muted"}>
-                            {formatDate(t.due_date)}
+                            {formatDate(t.due_date, tz)}
                           </td>
                           <td>
                             <StatusBadge status={t.priority} />

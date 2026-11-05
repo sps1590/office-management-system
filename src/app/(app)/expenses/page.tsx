@@ -45,6 +45,8 @@ export default async function ExpensesPage({
   ]);
 
   const currency = user.tenant.currency;
+
+  const tz = user.tenant.timezone;
   const queue = claims.filter((c) => c.status === "pending" && c.user_id !== user.id);
   const approvedUnpaid = claims.filter((c) => c.status === "approved");
   const myPending = mine.filter((c) => c.status === "pending").length;
@@ -125,7 +127,7 @@ export default async function ExpensesPage({
                           </span>
                         </p>
                         <p className="text-sm text-fg-muted">
-                          {c.user_name} · {formatDate(c.expense_date)} ·{" "}
+                          {c.user_name} · {formatDate(c.expense_date, tz)} ·{" "}
                           {c.claim_number ?? "—"}
                         </p>
                         {c.description && (
@@ -240,7 +242,7 @@ export default async function ExpensesPage({
                         <td className="text-fg-muted capitalize">
                           {c.category.replace(/_/g, " ")}
                         </td>
-                        <td className="text-fg-muted">{formatDate(c.expense_date)}</td>
+                        <td className="text-fg-muted">{formatDate(c.expense_date, tz)}</td>
                         <td className="right font-semibold">{money(c.amount, currency)}</td>
                         <td className="text-fg-muted">{c.approver_name ?? "—"}</td>
                         <td>
@@ -298,7 +300,7 @@ export default async function ExpensesPage({
                   name="expenseDate"
                   type="date"
                   required
-                  defaultValue={isoDate()}
+                  defaultValue={isoDate(tz)}
                   className="input"
                 />
               </div>

@@ -28,8 +28,9 @@ export default async function LeavePage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("leave", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
-  const year = new Date().getFullYear();
+  const year = Number(isoDate(tz).slice(0, 4));
 
   const seesTeam = canSeeEveryone(user, "leave");
 
@@ -97,7 +98,7 @@ export default async function LeavePage({
                           <p className="font-medium">{r.full_name}</p>
                           <p className="text-sm text-fg-muted">
                             {r.leave_type} · {num(r.days, 1)} day{Number(r.days) === 1 ? "" : "s"} ·{" "}
-                            {formatDate(r.start_date)} – {formatDate(r.end_date)}
+                            {formatDate(r.start_date, tz)} – {formatDate(r.end_date, tz)}
                           </p>
                           {r.reason && (
                             <p className="mt-1.5 text-sm text-fg-muted italic">
@@ -158,7 +159,7 @@ export default async function LeavePage({
                       <tr key={r.id}>
                         <td className="font-medium">{r.leave_type}</td>
                         <td className="text-fg-muted">
-                          {formatDate(r.start_date)} – {formatDate(r.end_date)}
+                          {formatDate(r.start_date, tz)} – {formatDate(r.end_date, tz)}
                         </td>
                         <td className="right">{num(r.days, 1)}</td>
                         <td className="text-fg-muted">
@@ -231,7 +232,7 @@ export default async function LeavePage({
                           </td>
                           <td className="text-fg-muted">{r.leave_type}</td>
                           <td className="text-fg-muted">
-                            {formatDate(r.start_date)} – {formatDate(r.end_date)}
+                            {formatDate(r.start_date, tz)} – {formatDate(r.end_date, tz)}
                           </td>
                           <td className="right">{num(r.days, 1)}</td>
                           <td className="text-fg-muted">
@@ -268,8 +269,8 @@ export default async function LeavePage({
                     label: `${t.name}${t.annual_quota ? ` (${num(t.annual_quota, 0)} days/yr)` : ""}`,
                   })),
                 },
-                { name: "startDate", label: "From", type: "date", required: true, defaultValue: isoDate() },
-                { name: "endDate", label: "To", type: "date", required: true, defaultValue: isoDate() },
+                { name: "startDate", label: "From", type: "date", required: true, defaultValue: isoDate(tz) },
+                { name: "endDate", label: "To", type: "date", required: true, defaultValue: isoDate(tz) },
                 { name: "reason", label: "Reason", type: "textarea", rows: 2 },
               ]}
             />

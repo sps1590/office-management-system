@@ -26,6 +26,7 @@ export const metadata: Metadata = { title: "GPS & geofences" };
 
 export default async function TrackingPage() {
   const user = await requirePermission("tracking", "view");
+  const tz = user.tenant.timezone;
 
   const [devices, fences, events, stats, people, settings] = await Promise.all([
     listDevices(user.tenant_id),
@@ -249,7 +250,7 @@ export default async function TrackingPage() {
                     {events.map((e) => (
                       <tr key={e.id}>
                         <td className="text-fg-muted text-xs">
-                          {formatDateTime(e.occurred_at)}
+                          {formatDateTime(e.occurred_at, tz)}
                         </td>
                         <td className="font-medium">{e.full_name}</td>
                         <td className="text-fg-muted">{e.geofence_name ?? "—"}</td>

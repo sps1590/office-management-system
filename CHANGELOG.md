@@ -3,6 +3,83 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-06 — Every date and time is now the company's, not the server's
+
+The app had been telling every company the server's time. A booking typed as
+10:00 in Dhaka reached a TIMESTAMPTZ unqualified, so Postgres read it in the
+session zone and stored 10:00 UTC — four in the afternoon, locally — and
+`formatDateTime` then rendered it in whatever zone the *server* happened to
+run in: UTC on Vercel, Asia/Dhaka on a laptop. Production and development
+disagreed with each other and both disagreed with the office.
+
+`tenants.timezone` now decides, and is threaded explicitly wherever a wall
+clock is read or written, the way `money()` is already passed the tenant's
+currency.
+
+### Storing
+- `zonedToInstant()` / `zonedToSql()` resolve a `datetime-local` value in the
+  tenant's zone before it reaches the database. Applied to room bookings,
+  vehicle bookings, field visits, logistics routes and HR's manual attendance
+  entry — every place a typed clock becomes a TIMESTAMPTZ. The offset is
+  resolved twice, since it depends on the instant and the instant on the
+  offset, which also makes it right across a daylight-saving change.
+- `computeLateMinutes()` builds the start of the shift from the company's
+  calendar day in the company's zone. It used `setHours`, which read the
+  server's clock: "work starts at 09:00" was nine o'clock in Washington.
+
+### Rendering
+- `formatDate`, `formatDateTime` and `formatTime` take the zone as a required
+  argument, so the compiler finds every one of the 101 call sites rather than
+  leaving one to drift back to the server's clock. `isoDate()` returns the
+  calendar day where the company is; the year used for "this year" totals and
+  the dashboard's date line come from the same place.
+- **A DATE is never pushed through a zone.** The driver's default parser turns
+  one into a `Date` at the *process's* midnight, which renders as the day
+  before for any tenant west of the server — a leave request starting 09 Nov
+  reading as 08 Nov in New York. The parser for OID 1082 now returns the raw
+  `YYYY-MM-DD`, which is what every row type in the codebase already declared
+  it to be, and `formatDate` ignores any zone passed for such a value. It is
+  set on the shared pg-types registry: the HTTP driver takes a `types` option
+  only per query and silently ignores the one given to the connection.
+- The attendance trend's day axis ends on the company's today rather than
+  `CURRENT_DATE`, which is the database's UTC day.
+- The check-in widget and the field tracker are client components and had been
+  using the *browser's* zone; both now take the company's.
+
+### Choosing the zone
+- Settings offers the 418 IANA zones as a list instead of a text box, with the
+  current time there shown underneath, and the server refuses a zone it does
+  not know rather than letting every page quietly fall back to UTC.
+- Registration sends the browser's zone in a hidden field, validated
+  server-side, so a company outside Bangladesh is not silently put on Dhaka
+  time. The platform console stays in UTC and says so in the column header:
+  one table spanning every tenant cannot sort in mixed zones.
+
+### Found while verifying
+`usePreservedForm` restored a refused form inside a `requestAnimationFrame`,
+which never fires in a tab that is not painting — so the one case where
+someone is most likely to lose their typing, submitting and then looking away,
+was the case where the restore never ran. It is a `setTimeout` now.
+
+### Verified
+Against a throwaway tenant on the real database: 10:00 typed in Dhaka stored
+as `04:00Z` and shown as 10:00; the same row re-read after switching the
+company to `America/New_York` shown as 23:00 the previous day, unchanged in
+the database. A manual attendance entry of 09:45–18:00 stored `14:45Z`–`23:00Z`
+and computed 30 minutes late against a 09:00 start with 15 minutes' grace. A
+DATE column rendered 05 Nov for a New York tenant rather than 04 Nov. The
+free-slot suggestions read in the tenant's zone throughout. All 34 routes
+returned 200. The test tenant was deleted afterwards.
+
+### Known limitation
+Aggregate counters that compare a DATE column against `CURRENT_DATE` — overdue
+invoices and bills, "this month" totals, documents expiring within 30 days,
+on-leave-today — still use the database's UTC day. They can therefore be a day
+out for the few hours each day when the company's date and UTC's differ.
+Correcting them means threading the zone into about twenty more query
+functions for a counter that drifts by one; it is recorded here rather than
+done.
+
 ## 2026-11-05 — A refused room booking now says when the room is free
 
 Refusing an overlap with "already booked for part of that slot" left the next

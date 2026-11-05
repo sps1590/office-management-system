@@ -26,6 +26,7 @@ export default async function LogisticsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("logistics", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [routes, vehicles, drivers, warehouses, orders] = await Promise.all([
@@ -129,14 +130,14 @@ export default async function LogisticsPage({
                         </span>
                       </td>
                       <td className="text-fg-muted text-xs">
-                        {r.planned_departure ? formatDateTime(r.planned_departure) : "—"}
+                        {r.planned_departure ? formatDateTime(r.planned_departure, tz) : "—"}
                         <br />
-                        {r.planned_arrival ? formatDateTime(r.planned_arrival) : ""}
+                        {r.planned_arrival ? formatDateTime(r.planned_arrival, tz) : ""}
                       </td>
                       <td className="text-fg-muted text-xs">
-                        {r.actual_departure ? formatDateTime(r.actual_departure) : "—"}
+                        {r.actual_departure ? formatDateTime(r.actual_departure, tz) : "—"}
                         <br />
-                        {r.actual_arrival ? formatDateTime(r.actual_arrival) : ""}
+                        {r.actual_arrival ? formatDateTime(r.actual_arrival, tz) : ""}
                       </td>
                       <td className="right">
                         {r.distance_km != null ? `${num(r.distance_km, 1)} km` : "—"}

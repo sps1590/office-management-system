@@ -12,9 +12,13 @@ import { isoDate } from "./utils";
  * aggregates with no row data) but the page only renders the sections the
  * user's role permits.
  */
-export async function loadDashboard(tenantId: string, userId: string) {
+export async function loadDashboard(
+  tenantId: string,
+  userId: string,
+  timeZone: string
+) {
   const db = await getDb();
-  const today = isoDate();
+  const today = isoDate(timeZone);
 
   const [
     attendance,
@@ -34,7 +38,7 @@ export async function loadDashboard(tenantId: string, userId: string) {
     monthlyCash,
   ] = await Promise.all([
     attendanceSummary(tenantId, today),
-    attendanceTrend(tenantId, 14),
+    attendanceTrend(tenantId, timeZone, 14),
 
     // "Waiting on me": leave stages and PO tiers assigned to this user.
     db`

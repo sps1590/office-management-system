@@ -34,6 +34,7 @@ export default async function FleetPage({
   const canCreate = hasPermission(user, "fleet", "create");
   const canEdit = hasPermission(user, "fleet", "edit");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   // "Expiring" means within 30 days — the window in which renewal is actionable.
   const expiring = vehicles.filter((v) => {
@@ -148,10 +149,10 @@ export default async function FleetPage({
                         <td className="text-fg-muted">{v.driver_name ?? "—"}</td>
                         <td className="right">{num(v.current_odometer)} km</td>
                         <td>
-                          <ExpiryCell date={v.insurance_expiry} />
+                          <ExpiryCell date={v.insurance_expiry} tz={tz} />
                         </td>
                         <td>
-                          <ExpiryCell date={v.fitness_expiry} />
+                          <ExpiryCell date={v.fitness_expiry} tz={tz} />
                         </td>
                         <td>
                           <StatusBadge status={v.status} />
@@ -248,7 +249,7 @@ export default async function FleetPage({
   );
 }
 
-function ExpiryCell({ date }: { date: string | null }) {
+function ExpiryCell({ date, tz }: { date: string | null; tz: string }) {
   if (!date) return <span className="text-fg-subtle">—</span>;
   const time = new Date(date).getTime();
   const expired = time < Date.now();
@@ -263,7 +264,7 @@ function ExpiryCell({ date }: { date: string | null }) {
             : "text-fg-muted text-sm"
       }
     >
-      {formatDate(date)}
+      {formatDate(date, tz)}
     </span>
   );
 }

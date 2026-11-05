@@ -15,7 +15,8 @@ export const metadata: Metadata = { title: "My profile" };
 
 export default async function MyProfilePage() {
   const user = await requireUser();
-  const year = new Date().getFullYear();
+  const tz = user.tenant.timezone;
+  const year = Number(isoDate(tz).slice(0, 4));
   const from = new Date();
   from.setDate(from.getDate() - 29);
 
@@ -23,10 +24,11 @@ export default async function MyProfilePage() {
     getEmployee(user.tenant_id, user.id),
     leaveBalances(user.tenant_id, user.id, year),
     myPayslips(user.tenant_id, user.id),
-    attendanceRange(user.tenant_id, user.id, isoDate(from), isoDate()),
+    attendanceRange(user.tenant_id, user.id, isoDate(tz, from), isoDate(tz)),
   ]);
 
   const currency = user.tenant.currency;
+
   const present = attendance.filter((a) => ["present", "late"].includes(a.status)).length;
   const overtime = attendance.reduce((s, a) => s + a.overtime_minutes, 0);
   const latestPayslip = payslips[0];
@@ -88,7 +90,7 @@ export default async function MyProfilePage() {
               <Field label="Employee code">{user.employee_code ?? "—"}</Field>
               <Field label="Department">{user.department_name ?? "—"}</Field>
               <Field label="Phone">{user.phone ?? "—"}</Field>
-              <Field label="Joined">{formatDate(profile?.date_of_joining)}</Field>
+              <Field label="Joined">{formatDate(profile?.date_of_joining, tz)}</Field>
               <Field label="Employment type">
                 <span className="capitalize">{profile?.employment_type ?? "—"}</span>
               </Field>
@@ -195,7 +197,7 @@ export default async function MyProfilePage() {
                   ) : (
                     attendance.map((a) => (
                       <tr key={a.id}>
-                        <td>{formatDate(a.work_date)}</td>
+                        <td>{formatDate(a.work_date, tz)}</td>
                         <td className="right">{duration(a.worked_minutes)}</td>
                         <td className="right">
                           {a.overtime_minutes > 0 ? duration(a.overtime_minutes) : "—"}

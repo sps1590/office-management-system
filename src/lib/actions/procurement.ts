@@ -10,7 +10,7 @@ import { getSettings } from "@/lib/settings";
 import { postJournal } from "@/lib/ledger";
 import { nextDocNumber } from "@/lib/sequence";
 import { audit, notify, notifyRoles } from "@/lib/audit";
-import { isoDate } from "@/lib/utils";
+import { isoDate, zonedToSql } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
 const nullable = (max = 200) =>
@@ -382,7 +382,7 @@ export async function createPurchaseOrderAction(
   const parsed = poSchema.safeParse({
     vendorId: formData.get("vendorId"),
     warehouseId: formData.get("warehouseId") ?? "",
-    orderDate: formData.get("orderDate") || isoDate(),
+    orderDate: formData.get("orderDate") || isoDate(user.tenant.timezone),
     expectedDate: formData.get("expectedDate") ?? "",
     taxAmount: formData.get("taxAmount") || 0,
     shippingAmount: formData.get("shippingAmount") || 0,
@@ -832,7 +832,7 @@ export async function receivePurchaseOrderAction(
   // Goods received but not yet paid: inventory up, accounts payable up.
   if (po.total_amount > 0) {
     await postJournal(user.tenant_id, {
-      date: isoDate(),
+      date: isoDate(user.tenant.timezone),
       description: `Goods received — ${po.po_number}`,
       source: "purchase_order",
       sourceId: poId,
@@ -923,8 +923,9 @@ export async function createLogisticsRouteAction(
                                   planned_arrival, notes, status)
     VALUES (${user.tenant_id}, ${d.reference}, ${d.purchaseOrderId}, ${d.assignedVehicleId},
             ${d.driverId}, ${d.originWarehouseId}, ${d.destination},
-            ${d.destinationLat}, ${d.destinationLng}, ${d.plannedDeparture},
-            ${d.plannedArrival}, ${d.notes}, 'planned')
+            ${d.destinationLat}, ${d.destinationLng},
+            ${zonedToSql(d.plannedDeparture, user.tenant.timezone)},
+            ${zonedToSql(d.plannedArrival, user.tenant.timezone)}, ${d.notes}, 'planned')
   `;
   if (d.driverId) {
     await notify({

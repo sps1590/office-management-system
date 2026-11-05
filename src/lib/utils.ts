@@ -37,39 +37,192 @@ export function percent(part: number, whole: number): number {
   return Math.round((part / whole) * 100);
 }
 
-// --- dates -----------------------------------------------------------------
+// --- time zones and dates --------------------------------------------------
 
-/** YYYY-MM-DD in local time — what every DATE column stores. */
-export function isoDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+/*
+   Every company keeps its own clock. `tenants.timezone` is what an office in
+   Dhaka, Dubai or Toronto means by "ten o'clock"; the server's clock is an
+   accident of hosting -- UTC on Vercel, Asia/Dhaka on a laptop -- and must
+   never reach a screen. So a zone is passed in wherever a wall clock is read
+   or written, exactly as `money()` is passed the tenant's currency.
+
+   Two column kinds, two rules:
+
+   - TIMESTAMPTZ holds an instant. It is stored as the true moment and is
+     rendered through the tenant's zone.
+   - DATE holds a calendar day with no zone at all. Pushing one through a
+     zone is how "08 Nov" becomes "07 Nov" for anyone west of UTC, so a bare
+     YYYY-MM-DD is always read back as itself, whatever zone is passed.
+
+   `Intl` resolves the offset per instant, which makes this correct across
+   daylight saving without a date library.
+*/
+
+const zoneCache = new Map<string, string>();
+
+/** Falls back to UTC rather than throwing on a zone `Intl` does not know. */
+function safeZone(timeZone: string | null | undefined): string {
+  const wanted = timeZone?.trim() || "UTC";
+  const cached = zoneCache.get(wanted);
+  if (cached) return cached;
+  let resolved = "UTC";
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: wanted });
+    resolved = wanted;
+  } catch {
+    // A tenant can type its own timezone in Settings; a typo must not take
+    // every page down with a RangeError.
+  }
+  zoneCache.set(wanted, resolved);
+  return resolved;
 }
 
-export function formatDate(value: string | Date | null | undefined): string {
-  if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+/** Zone validity on its own, for validating what Settings submits. */
+export function isKnownTimeZone(timeZone: string): boolean {
+  return safeZone(timeZone) === timeZone.trim();
 }
 
-export function formatDateTime(value: string | Date | null | undefined): string {
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(kind: string, zone: string, options: Intl.DateTimeFormatOptions) {
+  const key = `${kind}|${zone}`;
+  let f = formatters.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-GB", { ...options, timeZone: zone });
+    formatters.set(key, f);
+  }
+  return f;
+}
+
+type Wall = {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+};
+
+/** The wall-clock fields an instant shows as in `zone`. */
+function wallParts(instant: Date, zone: string): Wall {
+  const out: Record<string, string> = {};
+  for (const part of formatter("parts", zone, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant)) {
+    if (part.type !== "literal") out[part.type] = part.value;
+  }
+  return out as unknown as Wall;
+}
+
+function offsetMs(instant: Date, zone: string): number {
+  const w = wallParts(instant, zone);
+  return (
+    Date.UTC(+w.year, +w.month - 1, +w.day, +w.hour, +w.minute, +w.second) -
+    instant.getTime()
+  );
+}
+
+function asDate(value: string | Date): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+/**
+ * The instant a `datetime-local` value names in `timeZone`.
+ *
+ * Without this the typed string reaches a TIMESTAMPTZ unqualified and
+ * Postgres reads it in the *session* zone, so "10:00" booked from Dhaka is
+ * stored as 10:00 UTC -- four o'clock in the afternoon, locally.
+ *
+ * Resolved twice because the offset depends on the instant and the instant
+ * on the offset: the first pass lands within an hour, the second is exact.
+ */
+export function zonedToInstant(wallClock: string, timeZone: string): Date {
+  const zone = safeZone(timeZone);
+  const naive = Date.parse(`${wallClock.trim().replace(" ", "T").replace(/Z$/, "")}Z`);
+  if (Number.isNaN(naive)) return new Date(NaN);
+  const once = naive - offsetMs(new Date(naive), zone);
+  return new Date(naive - offsetMs(new Date(once), zone));
+}
+
+/**
+ * A `datetime-local` value as the ISO instant to hand a TIMESTAMPTZ column,
+ * or null when the field was left empty.
+ */
+export function zonedToSql(
+  wallClock: string | null | undefined,
+  timeZone: string
+): string | null {
+  if (!wallClock) return null;
+  const at = zonedToInstant(wallClock, timeZone);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
+}
+
+/** The `datetime-local` value an instant shows as in `timeZone`. */
+export function instantToZoned(value: string | Date, timeZone: string): string {
+  const d = asDate(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const w = wallParts(d, safeZone(timeZone));
+  return `${w.year}-${w.month}-${w.day}T${w.hour}:${w.minute}`;
+}
+
+/** YYYY-MM-DD for a DATE column: the calendar day where the company is. */
+export function isoDate(timeZone: string, at: Date = new Date()): string {
+  const w = wallParts(at, safeZone(timeZone));
+  return `${w.year}-${w.month}-${w.day}`;
+}
+
+/** True when the value is a bare DATE, which carries no zone to convert. */
+const isCalendarDay = (value: string | Date) =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+export function formatDate(
+  value: string | Date | null | undefined,
+  timeZone: string
+): string {
   if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
+  const d = asDate(value);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", {
+  return formatter("date", isCalendarDay(value) ? "UTC" : safeZone(timeZone), {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(d);
+}
+
+export function formatDateTime(
+  value: string | Date | null | undefined,
+  timeZone: string
+): string {
+  if (!value) return "—";
+  const d = asDate(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return formatter("datetime", isCalendarDay(value) ? "UTC" : safeZone(timeZone), {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-  });
+    hourCycle: "h23",
+  }).format(d);
 }
 
-export function formatTime(value: string | Date | null | undefined): string {
+export function formatTime(
+  value: string | Date | null | undefined,
+  timeZone: string
+): string {
   if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
+  const d = asDate(value);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return formatter("time", safeZone(timeZone), {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(d);
 }
 
 /** "3 hours ago", for activity feeds. */

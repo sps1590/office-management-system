@@ -18,6 +18,7 @@ export default async function FieldVisitsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("field", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const seesAll = canSeeEveryone(user, "field");
@@ -82,10 +83,10 @@ export default async function FieldVisitsPage({
                         </p>
                         <p className="text-xs text-fg-subtle mt-0.5">
                           {v.planned_for
-                            ? `Planned ${formatDateTime(v.planned_for)}`
+                            ? `Planned ${formatDateTime(v.planned_for, tz)}`
                             : "No time set"}
                           {v.checked_in_at
-                            ? ` · checked in ${formatDateTime(v.checked_in_at)}`
+                            ? ` · checked in ${formatDateTime(v.checked_in_at, tz)}`
                             : ""}
                         </p>
                       </div>
@@ -179,7 +180,7 @@ export default async function FieldVisitsPage({
                           </span>
                           {v.planned_for && (
                             <span className="block text-xs text-fg-subtle">
-                              Planned {formatDateTime(v.planned_for)}
+                              Planned {formatDateTime(v.planned_for, tz)}
                             </span>
                           )}
                         </td>
@@ -193,7 +194,7 @@ export default async function FieldVisitsPage({
                         )}
                         <td className="text-fg-muted">{v.client_name ?? "—"}</td>
                         <td className="text-fg-muted text-xs">
-                          {v.checked_in_at ? formatDateTime(v.checked_in_at) : "—"}
+                          {v.checked_in_at ? formatDateTime(v.checked_in_at, tz) : "—"}
                         </td>
                         <td className="text-fg-muted">
                           <span className="block truncate max-w-48">{v.outcome ?? "—"}</span>

@@ -40,7 +40,8 @@ export const metadata: Metadata = { title: "Executive MIS" };
 export default async function MisPage() {
   const user = await requirePermission("mis", "view");
   const currency = user.tenant.currency;
-  const year = new Date().getFullYear();
+  const tz = user.tenant.timezone;
+  const year = Number(isoDate(tz).slice(0, 4));
 
   const [
     people,
@@ -62,8 +63,8 @@ export default async function MisPage() {
     tasks,
   ] = await Promise.all([
     employeeStats(user.tenant_id),
-    attendanceSummary(user.tenant_id, isoDate()),
-    attendanceTrend(user.tenant_id, 21),
+    attendanceSummary(user.tenant_id, isoDate(tz)),
+    attendanceTrend(user.tenant_id, tz, 21),
     fleetStats(user.tenant_id),
     inventoryStats(user.tenant_id),
     procurementStats(user.tenant_id),
@@ -72,7 +73,7 @@ export default async function MisPage() {
     visitStats(user.tenant_id),
     financeStats(user.tenant_id),
     cashFlowTrend(user.tenant_id, 6),
-    incomeStatement(user.tenant_id, `${year}-01-01`, isoDate()),
+    incomeStatement(user.tenant_id, `${year}-01-01`, isoDate(tz)),
     trackingStats(user.tenant_id),
     livePositions(user.tenant_id),
     mapSites(user.tenant_id),

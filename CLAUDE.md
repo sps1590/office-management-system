@@ -40,15 +40,21 @@ drift stale.
   carried its success, so anything rendered from its own state is never seen.
   `ActionButton` already raises successes through `toast()`; a refusal leaves
   the record alone, so it stays inline where it was caused.
+- **Time belongs to the tenant, never to the server.** `tenants.timezone`
+  decides every wall clock, and it is passed explicitly — `const tz =
+  user.tenant.timezone` at the top of a page, exactly as `currency` is.
+  `formatDate` / `formatDateTime` / `formatTime` / `isoDate` all require it.
+  A `datetime-local` value goes through `zonedToSql()` before it reaches a
+  TIMESTAMPTZ; a bare `new Date("…T…")` would read the server's clock.
+- **A DATE is a calendar day, not an instant.** It stays a `YYYY-MM-DD`
+  string from the driver (`db.ts` sets the parser for OID 1082) all the way
+  to the screen, and no zone is ever applied to it. Pushing one through a
+  zone is how 09 Nov becomes 08 Nov for a tenant west of the server.
 - **A refusal that knows the way out offers it.** When an action can compute
   the alternative it is refusing in favour of — the next free window for a
   double-booked room — it returns `suggestions: [{ label, values }]` and
   `AutoForm` draws them as buttons that fill the named inputs. Do not write a
   message telling someone to work the answer out themselves.
-- **Timestamps written from a `datetime-local` input carry no zone**, so the
-  wall clock typed is what lands in the column. Anything that calculates over
-  those columns reads and writes UTC components (see `findFreeSlots`), or the
-  value it hands back will not be the time its label says.
 - **A new `nextDocNumber` kind is a new entry in its union, not the nearest
   existing one.** Reusing another kind's sequence silently shares a counter
   and collides with whatever `provision.ts` seeded — that is how every

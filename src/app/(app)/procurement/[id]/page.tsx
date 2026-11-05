@@ -21,6 +21,7 @@ export default async function PurchaseOrderPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await requirePermission("procurement", "view");
+  const tz = user.tenant.timezone;
   const { id } = await params;
 
   const po = await getPurchaseOrder(user.tenant_id, id);
@@ -49,7 +50,7 @@ export default async function PurchaseOrderPage({
 
       <PageHeader
         title={header.po_number}
-        description={`${header.vendor_name} · raised by ${header.requester_name ?? "—"} on ${formatDate(header.order_date)}`}
+        description={`${header.vendor_name} · raised by ${header.requester_name ?? "—"} on ${formatDate(header.order_date, tz)}`}
       >
         <StatusBadge status={header.status} />
         {canCreate && header.status === "draft" && (
@@ -107,8 +108,8 @@ export default async function PurchaseOrderPage({
         />
         <KpiCard
           label="Expected"
-          value={formatDate(header.expected_date)}
-          sub={header.received_date ? `Received ${formatDate(header.received_date)}` : undefined}
+          value={formatDate(header.expected_date, tz)}
+          sub={header.received_date ? `Received ${formatDate(header.received_date, tz)}` : undefined}
         />
       </section>
 
@@ -195,7 +196,7 @@ export default async function PurchaseOrderPage({
                         {a.threshold_amount != null
                           ? ` · threshold ${money(a.threshold_amount, currency)}`
                           : ""}
-                        {a.decided_at ? ` · ${formatDateTime(a.decided_at)}` : ""}
+                        {a.decided_at ? ` · ${formatDateTime(a.decided_at, tz)}` : ""}
                       </p>
                       {a.comments && (
                         <p className="mt-1 text-sm text-fg-muted italic">

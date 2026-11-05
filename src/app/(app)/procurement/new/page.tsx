@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "New purchase order" };
 
 export default async function NewPurchaseOrderPage() {
   const user = await requirePermission("procurement", "create");
+  const tz = user.tenant.timezone;
 
   const [vendors, warehouses, items] = await Promise.all([
     vendorOptions(user.tenant_id),
@@ -51,7 +52,7 @@ export default async function NewPurchaseOrderPage() {
             unit_cost: i.unit_cost,
           }))}
           currency={user.tenant.currency}
-          today={isoDate()}
+          today={isoDate(tz)}
         />
       )}
     </>

@@ -1,6 +1,7 @@
 import "server-only";
 import { getDb } from "./db";
 import { getSettings } from "./settings";
+import { formatTime, instantToZoned, isoDate, zonedToInstant } from "./utils";
 
 /* --- rooms ---------------------------------------------------------------- */
 
@@ -61,11 +62,13 @@ export async function listRoomBookings(
 
 /* --- free-slot search ------------------------------------------------------
    A refused booking is only half an answer; the useful half is when the room
-   IS free. Bookings are written from `datetime-local` inputs, which carry no
-   zone, so the wall clock someone typed is what lands in the column. Every
-   calculation below therefore reads and writes UTC components, which keeps a
-   suggested slot round-tripping back into the form as exactly the clock time
-   its label names.
+   IS free. Every boundary here -- the working day, the calendar day a slot
+   belongs to, the times on the buttons -- is the company's wall clock, read
+   through `tenants.timezone`, while the bookings themselves are compared as
+   the instants they are. Calendar arithmetic runs on bare YYYY-MM-DD strings
+   in UTC, where a day is always 24 hours, and each day's open and close are
+   converted back through the zone, so a daylight-saving change shifts the
+   office hours rather than the arithmetic.
    -------------------------------------------------------------------------- */
 
 export type FreeSlot = {
@@ -78,43 +81,47 @@ export type FreeSlot = {
 
 const SEARCH_DAYS = 7;
 const MIN_SLOT_MINUTES = 15;
-const DAY_MS = 86_400_000;
 
-const dayText = new Intl.DateTimeFormat("en-GB", {
-  weekday: "short",
-  day: "2-digit",
-  month: "short",
-  timeZone: "UTC",
-});
-const timeText = new Intl.DateTimeFormat("en-GB", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-  timeZone: "UTC",
-});
-
-/** Reads a stored or typed timestamp as a wall clock, without shifting it. */
-function wallClock(value: string | Date): Date {
-  if (value instanceof Date) return value;
-  const text = value.replace(" ", "T");
-  return new Date(/(Z|[+-]\d\d:?\d\d)$/.test(text) ? text : `${text}Z`);
+/** Steps a YYYY-MM-DD string by whole days, where UTC has no short days. */
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
-const startOfDay = (d: Date) =>
-  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+/** 0 = Sunday, the numbering `weekend_days` default [5, 6] was written for. */
+const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
+
+const clock = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 
 /** Names a time range, adding the date only when it is not `sameDayAs`. */
 export function slotLabel(
   start: string | Date,
   end: string | Date,
-  sameDayAs: string | Date
+  sameDayAs: string | Date,
+  timeZone: string
 ): string {
-  const a = wallClock(start);
-  const b = wallClock(end);
-  const range = `${timeText.format(a)}–${timeText.format(b)}`;
-  return startOfDay(a).getTime() === startOfDay(wallClock(sameDayAs)).getTime()
-    ? range
-    : `${dayText.format(a)}, ${range}`;
+  const a = start instanceof Date ? start : new Date(start);
+  const b = end instanceof Date ? end : new Date(end);
+  const range = `${formatTime(a, timeZone)}–${formatTime(b, timeZone)}`;
+  if (isoDate(timeZone, a) === isoDate(timeZone, new Date(sameDayAs))) return range;
+  return `${dayText(a, timeZone)}, ${range}`;
+}
+
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+function dayText(at: Date, timeZone: string): string {
+  let f = dayFormatters.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-GB", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      timeZone,
+    });
+    dayFormatters.set(timeZone, f);
+  }
+  return f.format(at);
 }
 
 /**
@@ -124,7 +131,7 @@ export function slotLabel(
  * The search runs over the company's working hours, widened on the requested
  * day itself so an after-hours request is answered after hours rather than
  * told to come back at nine, and skips the configured weekend on later days.
- * One suggestion comes out of each gap — its earliest start, since a meeting
+ * One suggestion comes out of each gap -- its earliest start, since a meeting
  * that can begin the moment the room empties is the one people want.
  */
 export async function findFreeSlots(
@@ -132,18 +139,19 @@ export async function findFreeSlots(
   roomId: string,
   wantedStart: string,
   wantedEnd: string,
+  timeZone: string,
   limit = 3
 ): Promise<FreeSlot[]> {
-  const from = wallClock(wantedStart);
-  const to = wallClock(wantedEnd);
+  const from = zonedToInstant(wantedStart, timeZone);
+  const to = zonedToInstant(wantedEnd, timeZone);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return [];
 
   const duration = Math.max(
     to.getTime() - from.getTime(),
     MIN_SLOT_MINUTES * 60_000
   );
-  const firstDay = startOfDay(from);
-  const horizon = new Date(firstDay.getTime() + SEARCH_DAYS * DAY_MS);
+  const firstDay = isoDate(timeZone, from);
+  const horizon = zonedToInstant(`${addDays(firstDay, SEARCH_DAYS)}T00:00`, timeZone);
 
   const db = await getDb();
   const [settings, rows] = await Promise.all([
@@ -153,7 +161,7 @@ export async function findFreeSlots(
         FROM room_bookings
        WHERE tenant_id = ${tenantId} AND room_id = ${roomId}
          AND status = 'confirmed'
-         AND end_time > ${firstDay.toISOString()}
+         AND end_time > ${zonedToInstant(`${firstDay}T00:00`, timeZone).toISOString()}
          AND start_time < ${horizon.toISOString()}
        ORDER BY start_time
     `,
@@ -161,41 +169,36 @@ export async function findFreeSlots(
 
   const busy = (rows as unknown as { start_time: string; end_time: string }[]).map(
     (r) => ({
-      start: wallClock(r.start_time).getTime(),
-      end: wallClock(r.end_time).getTime(),
+      start: new Date(r.start_time).getTime(),
+      end: new Date(r.end_time).getTime(),
     })
   );
 
   const [h, m] = settings.work_start_time.split(":").map(Number);
-  const opensAt = ((h || 0) * 60 + (m || 0)) * 60_000;
-  const closesAt = Math.min(
-    opensAt + settings.standard_work_minutes * 60_000,
-    DAY_MS
-  );
-  // 0 = Sunday, the JS day numbering the weekend_days default [5, 6] —
-  // Friday and Saturday — was written against.
+  const opensAt = (h || 0) * 60 + (m || 0);
+  const closesAt = Math.min(opensAt + settings.standard_work_minutes, 24 * 60 - 1);
   const weekend = new Set(settings.weekend_days ?? []);
   // Rounded up so a slot offered "from now" starts on a whole minute, which
   // is all a datetime-local input can carry anyway.
   const now = Math.ceil(Date.now() / 60_000) * 60_000;
 
   const slots: FreeSlot[] = [];
-  const offer = (start: number) => {
-    const a = new Date(start);
-    const b = new Date(start + duration);
+  const offer = (at: number) => {
+    const a = new Date(at);
+    const b = new Date(at + duration);
     slots.push({
-      label: slotLabel(a, b, from),
-      start: a.toISOString().slice(0, 16),
-      end: b.toISOString().slice(0, 16),
+      label: slotLabel(a, b, from, timeZone),
+      start: instantToZoned(a, timeZone),
+      end: instantToZoned(b, timeZone),
     });
   };
 
   for (let i = 0; i < SEARCH_DAYS && slots.length < limit; i++) {
-    const day = new Date(firstDay.getTime() + i * DAY_MS);
-    if (i > 0 && weekend.has(day.getUTCDay())) continue;
+    const day = addDays(firstDay, i);
+    if (i > 0 && weekend.has(weekdayOf(day))) continue;
 
-    let open = day.getTime() + opensAt;
-    let close = day.getTime() + closesAt;
+    let open = zonedToInstant(`${day}T${clock(opensAt)}`, timeZone).getTime();
+    let close = zonedToInstant(`${day}T${clock(closesAt)}`, timeZone).getTime();
     if (i === 0) {
       open = Math.min(open, from.getTime());
       close = Math.max(close, to.getTime());

@@ -28,6 +28,7 @@ export default async function BookingsPage({
   const seesAll = canSeeEveryone(user, "fleet");
   const canApprove = hasPermission(user, "fleet", "approve");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
   const [bookings, stats, vehicles, drivers] = await Promise.all([
     listBookings(user.tenant_id, {
@@ -88,7 +89,7 @@ export default async function BookingsPage({
                         {b.passengers} passenger{b.passengers === 1 ? "" : "s"}
                       </p>
                       <p className="text-xs text-fg-subtle mt-1">
-                        {formatDateTime(b.start_time)} → {formatDateTime(b.end_time)}
+                        {formatDateTime(b.start_time, tz)} → {formatDateTime(b.end_time, tz)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -125,7 +126,7 @@ export default async function BookingsPage({
                           {b.registration_number} · {b.purpose}
                         </p>
                         <p className="text-xs text-fg-subtle mt-0.5">
-                          {formatDateTime(b.start_time)} → {formatDateTime(b.end_time)}
+                          {formatDateTime(b.start_time, tz)} → {formatDateTime(b.end_time, tz)}
                         </p>
                       </div>
                       <StatusBadge status={b.status} />
@@ -240,9 +241,9 @@ export default async function BookingsPage({
                         </td>
                         <td className="text-fg-muted">{b.requester_name}</td>
                         <td className="text-fg-muted text-xs">
-                          {formatDateTime(b.start_time)}
+                          {formatDateTime(b.start_time, tz)}
                           <br />
-                          {formatDateTime(b.end_time)}
+                          {formatDateTime(b.end_time, tz)}
                         </td>
                         <td className="right">
                           {b.distance_km != null ? `${num(b.distance_km, 1)} km` : "—"}

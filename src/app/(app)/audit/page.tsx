@@ -14,6 +14,7 @@ export default async function AuditPage({
   searchParams: Promise<{ q?: string; action?: string }>;
 }) {
   const user = await requirePermission("audit", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
   const db = await getDb();
   const q = sp.q?.trim() ? `%${sp.q.trim()}%` : null;
@@ -112,7 +113,7 @@ export default async function AuditPage({
                 {rows.map((e) => (
                   <tr key={e.id}>
                     <td className="text-fg-muted text-xs whitespace-nowrap">
-                      {formatDateTime(e.created_at)}
+                      {formatDateTime(e.created_at, tz)}
                     </td>
                     <td>
                       <span className="block font-medium">{e.full_name ?? "System"}</span>

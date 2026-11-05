@@ -37,7 +37,10 @@ export default async function TrackerPage() {
           Signed in as <strong className="text-fg">{user.full_name}</strong>. Your
           company retains location data for {settings.telemetry_retention_days} days.
         </p>
-        <TrackerClient intervalSeconds={settings.telemetry_interval_seconds} />
+        <TrackerClient
+          intervalSeconds={settings.telemetry_interval_seconds}
+          timeZone={user.tenant.timezone}
+        />
       </main>
     </div>
   );

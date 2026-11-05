@@ -19,13 +19,14 @@ export const metadata: Metadata = { title: "General ledger" };
 export default async function FinancePage() {
   const user = await requirePermission("finance", "view");
   const currency = user.tenant.currency;
+  const tz = user.tenant.timezone;
 
-  const year = new Date().getFullYear();
+  const year = Number(isoDate(tz).slice(0, 4));
   const [balance, journal, accounts, pnl, stats, cash] = await Promise.all([
     trialBalance(user.tenant_id),
     recentJournal(user.tenant_id, 30),
     listAccounts(user.tenant_id),
-    incomeStatement(user.tenant_id, `${year}-01-01`, isoDate()),
+    incomeStatement(user.tenant_id, `${year}-01-01`, isoDate(tz)),
     financeStats(user.tenant_id),
     cashFlowTrend(user.tenant_id, 6),
   ]);
@@ -166,7 +167,7 @@ export default async function FinancePage() {
                   <tbody>
                     {journal.map((e) => (
                       <tr key={e.id}>
-                        <td className="text-fg-muted">{formatDate(e.entry_date)}</td>
+                        <td className="text-fg-muted">{formatDate(e.entry_date, tz)}</td>
                         <td className="font-medium">{e.description}</td>
                         <td>
                           <span className="badge badge-neutral">
@@ -225,7 +226,7 @@ export default async function FinancePage() {
                 submitLabel="Post entry"
                 resetOnSuccess
                 fields={[
-                  { name: "entryDate", label: "Date", type: "date", required: true, defaultValue: isoDate() },
+                  { name: "entryDate", label: "Date", type: "date", required: true, defaultValue: isoDate(tz) },
                   { name: "description", label: "Description", required: true },
                   { name: "amount", label: `Amount (${currency})`, type: "number", required: true, min: 0, step: "0.01" },
                   {

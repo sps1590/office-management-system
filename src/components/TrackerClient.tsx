@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, MapPin, Pause, Play, Satellite, WifiOff } from "lucide-react";
 import { enrolBrowserAction } from "@/lib/actions/tracking";
-import { cn } from "@/lib/utils";
+import { cn, formatTime } from "@/lib/utils";
 
 /**
  * The PWA tracker (docs/MOBILE.md §2.4).
@@ -21,7 +21,14 @@ type Status = "idle" | "starting" | "tracking" | "paused" | "error";
 
 type Sent = { at: number; lat: number; lng: number; accuracy: number };
 
-export default function TrackerClient({ intervalSeconds }: { intervalSeconds: number }) {
+export default function TrackerClient({
+  intervalSeconds,
+  timeZone,
+}: {
+  intervalSeconds: number;
+  /** The company's zone, so a driver abroad still reads the office clock. */
+  timeZone: string;
+}) {
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0);
@@ -259,7 +266,7 @@ export default function TrackerClient({ intervalSeconds }: { intervalSeconds: nu
             </div>
             <div className="flex justify-between">
               <dt className="text-fg-muted">Sent</dt>
-              <dd>{new Date(last.at).toLocaleTimeString("en-GB")}</dd>
+              <dd>{formatTime(new Date(last.at), timeZone)}</dd>
             </div>
           </dl>
         </div>

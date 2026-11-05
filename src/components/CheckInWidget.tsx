@@ -5,6 +5,7 @@ import { LogIn, LogOut, MapPin, MapPinOff } from "lucide-react";
 import { checkInAction, checkOutAction } from "@/lib/actions/attendance";
 import SubmitButton from "./SubmitButton";
 import { cn } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
 /**
@@ -20,11 +21,14 @@ export default function CheckInWidget({
   checkedOutAt,
   workedMinutes,
   requiresLocation,
+  timeZone,
 }: {
   checkedInAt: string | null;
   checkedOutAt: string | null;
   workedMinutes: number;
   requiresLocation: boolean;
+  /** The company's zone, not the browser's: a day away is still a work day. */
+  timeZone: string;
 }) {
   const mode = !checkedInAt ? "in" : !checkedOutAt ? "out" : "done";
   const [state, action] = useActionState<ActionState, FormData>(
@@ -64,10 +68,7 @@ export default function CheckInWidget({
     return () => clearInterval(id);
   }, [mode, checkedInAt]);
 
-  const time = (iso: string | null) =>
-    iso
-      ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-      : "—";
+  const time = (iso: string | null) => (iso ? formatTime(iso, timeZone) : "—");
 
   if (mode === "done") {
     return (
