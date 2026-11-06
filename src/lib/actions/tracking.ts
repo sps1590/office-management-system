@@ -126,6 +126,45 @@ export async function toggleGeofenceAction(
   const geofenceId = String(formData.get("geofenceId") ?? "");
   const db = await getDb();
 
+  /*
+     Deactivating the last office fence while check-in is gated on one locks
+     every employee out of checking in, and the refusal they would see talks
+     about being outside the office rather than about the fence that just
+     went away. Read the state first and refuse the move itself.
+  */
+  const before = await db`
+    SELECT g.kind,
+           g.is_active,
+           s.require_geofenced_checkin AS gated,
+           (SELECT COUNT(*)::int FROM geofences o
+             WHERE o.tenant_id = ${user.tenant_id}
+               AND o.is_active
+               AND o.kind IN ('office','warehouse')) AS active_offices
+      FROM geofences g
+      JOIN tenant_settings s ON s.tenant_id = g.tenant_id
+     WHERE g.id = ${geofenceId} AND g.tenant_id = ${user.tenant_id}
+  `;
+  if (before.length === 0) return { error: "Geofence not found." };
+  const state = before[0] as {
+    kind: string;
+    is_active: boolean;
+    gated: boolean;
+    active_offices: number;
+  };
+  if (
+    state.is_active &&
+    state.gated &&
+    ["office", "warehouse"].includes(state.kind) &&
+    state.active_offices <= 1
+  ) {
+    return {
+      error:
+        "This is the only active office geofence, and check-in currently requires " +
+        "one — deactivating it would refuse every check-in in the company. Add " +
+        "another office fence first, or turn off the location requirement in Settings.",
+    };
+  }
+
   const updated = await db`
     UPDATE geofences SET is_active = NOT is_active
      WHERE id = ${geofenceId} AND tenant_id = ${user.tenant_id}
@@ -134,6 +173,14 @@ export async function toggleGeofenceAction(
   if (updated.length === 0) return { error: "Geofence not found." };
   const row = updated[0] as { name: string; is_active: boolean };
 
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: row.is_active ? "geofence.activated" : "geofence.deactivated",
+    entity: "geofence",
+    entityId: geofenceId,
+    summary: `${row.is_active ? "Activated" : "Deactivated"} geofence ${row.name}`,
+  });
   revalidatePath("/tracking");
   return { success: `${row.name} ${row.is_active ? "activated" : "deactivated"}.` };
 }

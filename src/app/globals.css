@@ -645,3 +645,24 @@ table.data .right {
 [data-theme="dark"] .leaflet-tile-pane {
   filter: invert(1) hue-rotate(185deg) brightness(0.92) contrast(0.92);
 }
+
+/* The map point picker. Leaflet writes stroke and fill as presentation
+   attributes, which any stylesheet rule outranks -- so the ring takes the
+   theme's own colour and follows it into dark mode without a line of JS. */
+.oms-pick-pin {
+  border-radius: 9999px;
+  background: var(--primary);
+  border: 3px solid var(--surface);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--primary);
+  cursor: grab;
+}
+.oms-pick-pin:active {
+  cursor: grabbing;
+}
+.oms-pick-ring {
+  stroke: var(--primary);
+  fill: var(--primary);
+  stroke-width: 2;
+  stroke-opacity: 0.9;
+  fill-opacity: 0.1;
+}

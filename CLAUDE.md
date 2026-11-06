@@ -70,6 +70,25 @@ drift stale.
   existing one.** Reusing another kind's sequence silently shares a counter
   and collides with whatever `provision.ts` seeded — that is how every
   company's first employee came to clash with its admin's `EMP-00001`.
+- **A latitude and a longitude are picked on a map, not typed.** A form that
+  takes a point uses `AutoForm`'s `location` field (`name` is the latitude
+  input, `lngName` the longitude, `radiusName` previews a ring) — never a pair
+  of bare number inputs, which sends somebody to a mapping site to copy two
+  numbers back. Coordinate inputs take `step="any"`: a real paste from Google
+  Maps has fourteen decimals, and any other `step` makes the browser refuse
+  the correct value. `NUMERIC(10,7)` rounds to about a centimetre on the way
+  in, which is the only precision that means anything.
+- **`ON CONFLICT` against a partial unique index must repeat the predicate.**
+  `location_logs` is unique on `(device_id, log_timestamp) WHERE device_id IS
+  NOT NULL`, so the clause reads `ON CONFLICT (device_id, log_timestamp) WHERE
+  device_id IS NOT NULL`. Without the `WHERE`, Postgres cannot infer which
+  index is meant and raises `42P10` on every call — which is how the whole GPS
+  ingest answered 500 from the day it was written until 2026-11-07.
+- **Many nullable columns insert better from JSON than from arrays.** A
+  multi-row insert normally uses `unnest(...)` of parallel arrays, but a
+  Postgres array literal has to spell every null out, while a JSON object just
+  omits the key. `jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS
+  t(col TYPE, …)` is the safer shape once most columns are optional.
 - Validate every new action input with `zod`, in a schema declared next to the
   action. No hand-parsed `FormData`.
 - Colours come from the CSS custom properties in `globals.css` and must work

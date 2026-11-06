@@ -3,6 +3,65 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-07 — GPS ingest fixed, and coordinates picked on a map
+
+Four defects, all found by exercising the product rather than reading it.
+
+### Telemetry ingest answered 500 to every request
+
+`ingestPoints` wrote `ON CONFLICT (device_id, log_timestamp) DO NOTHING`,
+but that unique index is *partial* — `WHERE device_id IS NOT NULL` — and
+Postgres will not infer a partial index as the conflict arbiter unless the
+statement repeats its predicate. Every batch raised 42P10, so the GPS feature
+the SRS calls complete had never written a single row. The clause now carries
+the predicate, and the first real track went in: eight points accepted,
+replayed unchanged, and drawn on the live map with the fence around it.
+
+The same insert ran one statement per point inside a loop. Over Neon's HTTP
+driver each statement is a separate request, so a 500-point flush from an
+offline device was 500 round trips; it is now one `jsonb_to_recordset`
+insert. JSON rather than parallel `unnest` arrays because most of these
+columns are nullable and a JSON object just omits the key.
+
+### A new company could not check anybody in
+
+`require_geofenced_checkin` defaulted to TRUE while a new tenant has no
+geofences, so every check-in was refused — and the refusal said the person was
+outside the office rather than that no office existed. It defaults to FALSE
+now, which also suits the written-policy-first note this feature already
+carries. Two guards keep the state from coming back: settings refuses to turn
+the requirement on with no active office or warehouse fence, and the geofence
+toggle refuses to deactivate the last one while the requirement is on. A
+migration releases any company already stuck.
+
+### A coordinate pasted from a mapping site was rejected
+
+The geofence form carried `step="0.0000001"`, so the browser refused
+`23.81024858290594` — what Google Maps actually gives you — with "please
+enter a valid value" and two numbers either side of it. Coordinate inputs now
+use `step="any"` and let `NUMERIC(10,7)` round, which it does to about a
+centimetre.
+
+### A refusal aimed at a checkbox went nowhere
+
+`AutoForm`'s checkbox branch rendered no `FieldError`, so any
+`fieldErrors` entry for a checkbox was silently dropped. It renders one now.
+
+### Picking a point on a map
+
+Typing latitude and longitude meant leaving the product, finding the place in
+a mapping site, right-clicking and copying two numbers back — for geofences,
+client sites, warehouses and delivery destinations alike. `AutoForm` gained a
+`location` field type backed by a new `LocationPicker`: click the map, drag
+the pin, search a place name against OpenStreetMap's geocoder, or take the
+device's own position. The ring previews the radius live as it is typed.
+
+Leaflet was already a dependency for the operations map, so nothing new was
+added; the picker is loaded with `next/dynamic` so forms without a map do not
+carry it. The ring takes its colour from `--primary` through a stylesheet
+rule that outranks Leaflet's inline attribute, so it follows the theme into
+dark mode without a line of JavaScript.
+
 ## 2026-11-06 — Functions moved to Singapore, beside the database
 
 Batching removed the needless round trips; this removes the cost of the ones

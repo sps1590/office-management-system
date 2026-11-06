@@ -300,8 +300,13 @@ export default async function InventoryPage({
                       { name: "name", label: "Name", required: true },
                       { name: "code", label: "Code" },
                       { name: "address", label: "Address", type: "textarea", rows: 2 },
-                      { name: "latitude", label: "Latitude", help: "Used to place it on the operations map." },
-                      { name: "longitude", label: "Longitude" },
+                      {
+                        name: "latitude",
+                        lngName: "longitude",
+                        label: "Location",
+                        type: "location",
+                        help: "Places the warehouse on the operations map.",
+                      },
                     ]}
                   />
                 </div>

@@ -70,7 +70,12 @@ export const PLATFORM_SCHEMA: string[] = [
      overtime_after_minutes    INTEGER NOT NULL DEFAULT 480,
      weekend_days              INTEGER[] NOT NULL DEFAULT ARRAY[5,6],
      attendance_radius_meters  INTEGER NOT NULL DEFAULT 200,
-     require_geofenced_checkin BOOLEAN NOT NULL DEFAULT TRUE,
+     -- Off for a new company, deliberately. A fresh tenant has no geofences,
+     -- so requiring one refuses every check-in on day one -- and location
+     -- tracking of staff needs a written policy and notice first anyway.
+     -- updateSettingsAction will not let it be switched on until an office
+     -- fence exists to satisfy it.
+     require_geofenced_checkin BOOLEAN NOT NULL DEFAULT FALSE,
      telemetry_interval_seconds INTEGER NOT NULL DEFAULT 60,
      telemetry_retention_days  INTEGER NOT NULL DEFAULT 90,
      tracking_window_start     TIME NOT NULL DEFAULT '07:00',
@@ -94,4 +99,25 @@ export const PLATFORM_SCHEMA: string[] = [
      next_value INTEGER NOT NULL DEFAULT 1,
      PRIMARY KEY (tenant_id, kind)
    )`,
+
+  // CREATE TABLE IF NOT EXISTS leaves an existing table's defaults alone, so
+  // the change above reaches the deployed database only through this.
+  `ALTER TABLE tenant_settings
+     ALTER COLUMN require_geofenced_checkin SET DEFAULT FALSE`,
+
+  // Releases any company already stuck in the state that default created:
+  // check-in gated on a geofence, with no office or warehouse fence that
+  // could ever satisfy it, so every check-in was refused. Companies that
+  // have a fence are left exactly as their admin set them, and the state
+  // this repairs is one `updateSettingsAction` now refuses to create.
+  `UPDATE tenant_settings s
+      SET require_geofenced_checkin = FALSE, updated_at = now()
+    WHERE s.require_geofenced_checkin
+      AND NOT EXISTS (
+            SELECT 1 FROM geofences g
+             WHERE g.tenant_id = s.tenant_id
+               AND g.is_active
+               AND g.kind IN ('office','warehouse'))
+    -- tenancy-ok: one-off repair across every tenant, run by the schema
+    -- applier before any session exists`,
 ];

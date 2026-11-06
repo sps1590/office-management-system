@@ -1,12 +1,23 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import SubmitButton from "@/components/SubmitButton";
 import FieldError from "@/components/FieldError";
 import { cn } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 import { usePreservedForm } from "./usePreservedForm";
+
+/* Leaflet and its stylesheet are worth about 45 KB, and only the handful of
+   forms that take a map point need them -- so the picker is split out rather
+   than bundled into every form in the product. */
+const LocationPicker = dynamic(() => import("@/components/LocationPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[26rem] animate-pulse rounded-xl border border-border bg-surface-2" />
+  ),
+});
 
 /**
  * One form component driven by a field spec, used by every straightforward
@@ -34,8 +45,16 @@ export type FieldSpec = {
     | "password"
     | "select"
     | "textarea"
-    | "checkbox";
+    | "checkbox"
+    /** A point on a map. `name` is the latitude input; `lngName` the longitude. */
+    | "location";
   options?: { value: string; label: string }[];
+  /** `location` only: the name of the longitude input. */
+  lngName?: string;
+  /** `location` only: a radius input in the same form, previewed as a ring. */
+  radiusName?: string;
+  /** `location` only: the longitude to start from, paired with `defaultValue`. */
+  defaultLng?: number | null;
   required?: boolean;
   placeholder?: string;
   help?: string;
@@ -173,25 +192,44 @@ function Field({
   const spanClass =
     f.span === 3 ? "sm:col-span-3" : f.span === 2 ? "sm:col-span-2" : undefined;
 
+  if (type === "location") {
+    return (
+      <div className={spanClass ?? "sm:col-span-full"}>
+        <LocationPicker
+          latName={f.name}
+          lngName={f.lngName ?? `${f.name}Lng`}
+          radiusName={f.radiusName}
+          label={f.label}
+          help={f.help}
+          required={f.required}
+          defaultLat={(f.defaultValue as number | null | undefined) ?? null}
+          defaultLng={f.defaultLng ?? null}
+          errors={errors}
+        />
+      </div>
+    );
+  }
+
   if (type === "checkbox") {
     return (
-      <label
-        className={cn(
-          "flex items-start gap-2.5 py-1.5 cursor-pointer select-none",
-          spanClass
-        )}
-      >
-        <input
-          name={f.name}
-          type="checkbox"
-          defaultChecked={!!f.defaultValue}
-          className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
-        />
-        <span>
-          <span className="text-sm font-medium">{f.label}</span>
-          {f.help && <span className="block text-xs text-fg-subtle">{f.help}</span>}
-        </span>
-      </label>
+      <div className={spanClass}>
+        <label className="flex cursor-pointer select-none items-start gap-2.5 py-1.5">
+          <input
+            name={f.name}
+            type="checkbox"
+            defaultChecked={!!f.defaultValue}
+            className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
+            aria-invalid={invalid}
+          />
+          <span>
+            <span className="text-sm font-medium">{f.label}</span>
+            {f.help && <span className="block text-xs text-fg-subtle">{f.help}</span>}
+          </span>
+        </label>
+        {/* A refusal aimed at a checkbox used to land nowhere -- the branch
+            rendered no FieldError, so the message was dropped on the floor. */}
+        <FieldError errors={errors} name={f.name} />
+      </div>
     );
   }
 

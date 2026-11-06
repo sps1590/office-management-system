@@ -88,6 +88,30 @@ export async function updateSettingsAction(
   const d = parsed.data;
   const db = await getDb();
 
+  /*
+     Gating check-in on a geofence that does not exist refuses every check-in
+     in the company, and the refusal names the office rather than the missing
+     fence -- so the cause is almost impossible to guess from the symptom.
+     Turning it on is only meaningful once there is a fence to be inside of.
+  */
+  if (d.requireGeofencedCheckin) {
+    const fences = await db`
+      SELECT COUNT(*)::int AS n FROM geofences
+       WHERE tenant_id = ${user.tenant_id}
+         AND is_active = TRUE
+         AND kind IN ('office','warehouse')
+    `;
+    if ((fences[0] as { n: number }).n === 0) {
+      return {
+        error:
+          "Check-in cannot require a location yet: this company has no active office " +
+          "or warehouse geofence, so every check-in would be refused. Add one on the " +
+          "GPS & geofences screen first.",
+        fieldErrors: { requireGeofencedCheckin: ["No office geofence exists yet."] },
+      };
+    }
+  }
+
   await db`
     UPDATE tenant_settings
        SET standard_work_minutes = ${d.standardWorkMinutes},

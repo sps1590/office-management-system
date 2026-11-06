@@ -234,10 +234,11 @@ export default async function LogisticsPage({
                 { name: "plannedArrival", label: "Planned arrival", type: "datetime-local" },
                 {
                   name: "destinationLat",
-                  label: "Destination latitude",
-                  help: "Optional. Lets the map draw the delivery target and raise a deviation alert.",
+                  lngName: "destinationLng",
+                  label: "Destination",
+                  type: "location",
+                  help: "Lets the map draw the delivery target and raise a deviation alert.",
                 },
-                { name: "destinationLng", label: "Destination longitude" },
                 { name: "notes", label: "Notes", type: "textarea", rows: 2 },
               ]}
             />

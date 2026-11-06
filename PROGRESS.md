@@ -32,9 +32,23 @@ Last updated: **2026-11-06**
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
 
-`npm run build` is clean. `npm run check` reports **345 SQL statements across
-110 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
+`npm run build` is clean. `npm run check` reports **349 SQL statements across
+111 files, 59 of 63 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
+
+### Exercised on the running product, 2026-11-07
+
+A throwaway company was registered and driven through the UI rather than read.
+It found four defects, all now fixed and re-tested: telemetry ingest answered
+500 to every request (a partial unique index that `ON CONFLICT` could not
+infer), a new company could not check anybody in (the geofence requirement
+defaulted on with no geofence to satisfy it), a coordinate pasted from a
+mapping site was refused by `step="0.0000001"`, and a refusal aimed at a
+checkbox was never rendered. All 35 routes returned 200 with no error
+boundary. **The live map was seen with data on it for the first time** —
+eight ingested points, a person marker, the fence circle and the four
+counters. The tenant was deleted afterwards; NMCP has 2 users and no stray
+rows.
 
 ### Verified against the live database, 2026-11-06
 
@@ -204,7 +218,8 @@ That run surfaced the cross-region latency problem recorded under
   in-app notification centre; sending needs a provider key.
 - **Payment gateway.** Plans and subscriptions are modelled; nothing bills.
 - **Polygon geofence editor.** The schema and the evaluation engine handle
-  polygons; the UI creates circles only.
+  polygons; the UI creates circles only. The new map picker places a point,
+  not a shape.
 - **Attachment uploads.** Expense receipts and avatars have URL columns but no
   upload pipeline (Vercel Blob would be the natural fit).
 
@@ -233,14 +248,16 @@ That run surfaced the cross-region latency problem recorded under
   the distance instead of the database; right for an office in Dhaka, and one
   line to reverse. Note the Vercel dashboard still shows `iad1`, because
   `vercel.json` overrides the project setting without changing it.
-- **The map has not been seen with data on it.** Leaflet renders its empty
-  state correctly, but no device has reported a position through the UI, so
-  markers, clustering and route playback are still only exercised by the
-  server-side code behind them.
-- **Still no automated test suite.** Everything verified so far was verified
-  once, by hand or by a throwaway harness. A regression would be caught by
-  nothing. The two static checks (`npm run check`) cover tenancy and column
-  existence only.
+- **The map has been seen with data on it** (2026-11-07), after the ingest bug
+  above was fixed: eight points from an enrolled device drew a person marker,
+  the geofence circle and the live counters. Route playback and clustering at
+  scale are still only exercised by the code behind them — one device on one
+  short track is not a crowd.
+- **Still no automated test suite, and it is now the biggest risk.** The four
+  defects found on 2026-11-07 had all been "verified" before — by reading the
+  code, not by running it. One of them meant the GPS feature had never worked
+  at all. The two static checks (`npm run check`) cover tenancy and column
+  existence only; nothing exercises a code path.
 - **Two deliberate behaviours that look like bugs.** A sole company admin
   cannot *request* leave, because an approver chain needs somebody other than
   the requester — HR manual entry is the path for recording their own

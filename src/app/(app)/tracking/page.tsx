@@ -305,8 +305,15 @@ export default async function TrackingPage() {
                     ].map((k) => ({ value: k, label: k })),
                     help: "Office and warehouse fences also gate attendance check-in.",
                   },
-                  { name: "centerLat", label: "Centre latitude", type: "number", required: true, step: "0.0000001" },
-                  { name: "centerLng", label: "Centre longitude", type: "number", required: true, step: "0.0000001" },
+                  {
+                    name: "centerLat",
+                    lngName: "centerLng",
+                    radiusName: "radiusMeters",
+                    label: "Centre",
+                    type: "location",
+                    required: true,
+                    help: "Click the building on the map. The ring is the radius set below.",
+                  },
                   {
                     name: "radiusMeters",
                     label: "Radius (metres)",

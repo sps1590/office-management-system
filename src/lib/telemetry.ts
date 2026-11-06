@@ -160,7 +160,15 @@ function sanitise(p: IncomingPoint): IncomingPoint | null {
  * Writes a batch of coordinates and evaluates geofences on the newest point.
  *
  * Idempotent: the unique index on (device_id, log_timestamp) means a retried
- * batch is silently de-duplicated rather than duplicating a route.
+ * batch is silently de-duplicated rather than duplicating a route. That index
+ * is partial -- `WHERE device_id IS NOT NULL` -- so the ON CONFLICT below has
+ * to repeat the predicate. Without it Postgres cannot work out which index
+ * the clause means and raises 42P10, which is what every ingest did until
+ * 2026-11-07: the whole GPS feature answered 500.
+ *
+ * The batch goes in as one statement. Over Neon's HTTP driver each statement
+ * is its own request, so the row-at-a-time loop this replaced turned a
+ * 500-point flush from an offline device into 500 round trips.
  */
 export async function ingestPoints(
   device: ResolvedDevice,
@@ -175,21 +183,32 @@ export async function ingestPoints(
   // geofence check below runs against the device's current position.
   clean.sort((a, b) => (a.log_timestamp ?? "").localeCompare(b.log_timestamp ?? ""));
 
-  let accepted = 0;
-  for (const p of clean) {
-    const result = await db`
-      INSERT INTO location_logs (tenant_id, user_id, device_id, latitude, longitude,
-                                 log_timestamp, accuracy_meters, activity_state,
-                                 speed_kph, heading, battery_percent)
-      VALUES (${device.tenantId}, ${device.userId}, ${device.deviceRowId},
-              ${p.latitude}, ${p.longitude}, ${p.log_timestamp},
-              ${p.accuracy_meters ?? null}, ${p.activity_state ?? null},
-              ${p.speed_kph ?? null}, ${p.heading ?? null}, ${p.battery_percent ?? null})
-      ON CONFLICT (device_id, log_timestamp) DO NOTHING
-      RETURNING id
-    `;
-    if (result.length > 0) accepted += 1;
-  }
+  // Two points at the same instant collide with each other, not just with
+  // what is already stored, so the duplicate goes before the insert sees it.
+  const unique = clean.filter(
+    (p, i) => i === 0 || p.log_timestamp !== clean[i - 1].log_timestamp
+  );
+
+  /*
+     jsonb_to_recordset rather than parallel unnest arrays: most of these
+     columns are nullable, and a JSON object simply omits the key it has no
+     value for, where a Postgres array literal has to spell the null out.
+  */
+  const inserted = await db`
+    INSERT INTO location_logs (tenant_id, user_id, device_id, latitude, longitude,
+                               log_timestamp, accuracy_meters, activity_state,
+                               speed_kph, heading, battery_percent)
+    SELECT ${device.tenantId}, ${device.userId}, ${device.deviceRowId},
+           p.latitude, p.longitude, p.log_timestamp, p.accuracy_meters,
+           p.activity_state, p.speed_kph, p.heading, p.battery_percent
+      FROM jsonb_to_recordset(${JSON.stringify(unique)}::jsonb)
+             AS p(latitude NUMERIC, longitude NUMERIC, log_timestamp TIMESTAMPTZ,
+                  accuracy_meters NUMERIC, activity_state TEXT, speed_kph NUMERIC,
+                  heading NUMERIC, battery_percent INTEGER)
+    ON CONFLICT (device_id, log_timestamp) WHERE device_id IS NOT NULL DO NOTHING
+    RETURNING id
+  `;
+  const accepted = inserted.length;
 
   await db`
     UPDATE device_registrations SET last_seen_at = now()

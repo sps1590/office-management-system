@@ -178,10 +178,11 @@ export default async function ClientsPage({
                 { name: "address", label: "Address", type: "textarea", rows: 2 },
                 {
                   name: "latitude",
-                  label: "Latitude",
-                  help: "Set both coordinates to allow GPS verification of visits here.",
+                  lngName: "longitude",
+                  label: "Location",
+                  type: "location",
+                  help: "Place the pin to allow GPS verification of visits here.",
                 },
-                { name: "longitude", label: "Longitude" },
               ]}
             />
           </Card>
