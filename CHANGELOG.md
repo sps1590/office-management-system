@@ -3,6 +3,39 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-06 — Functions moved to Singapore, beside the database
+
+Batching removed the needless round trips; this removes the cost of the ones
+that are left. The Neon database is in `ap-southeast-1` and the functions were
+in `iad1` (Washington), so every query a page made crossed the Pacific at
+about 230 ms. `vercel.json` now pins `regions: ["sin1"]`, which puts the
+functions in the same city as the data.
+
+No data moved and nothing was migrated: it is a config line and a redeploy.
+The trade is that a visitor far from Singapore now pays the distance instead
+of the database — the right way round for an office in Dhaka, and reversible
+by editing one line.
+
+### Measured on production, all three paths, through the whole day's work
+
+| | `iad1`, unbatched | `iad1`, batched | `sin1`, batched |
+| --- | --- | --- | --- |
+| Registering a company | ~45 s | 5.4 s | **1.0 s** |
+| First sign-in after idle | 35 s | 3.0 s | **1.06 s** |
+| Warm sign-in | 1.5 s | 1.3 s | **1.04 s** |
+
+The cold/warm gap has essentially closed: three consecutive sign-in attempts
+measured 1.06, 1.03 and 1.05 seconds. What remains in that second is mostly
+the browser's own trip to the edge, not the database.
+
+### Worth knowing
+The region lives in `vercel.json`, which overrides the project's dashboard
+setting without changing it — so Vercel's project page still reads `iad1`
+while deployments run in `sin1`. The deployment is the truth, and the
+`x-vercel-id` response header shows it: `bom1::sin1::…`, edge PoP then
+function region. The repo is the single source for this, the way the schema
+and the settings already are.
+
 ## 2026-11-06 — Registering a company in four round trips instead of 45
 
 The last of the slow paths. `provisionTenant` made 45 writes, each its own

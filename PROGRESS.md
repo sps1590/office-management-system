@@ -222,19 +222,17 @@ That run surfaced the cross-region latency problem recorded under
 
 ## Known gaps and risks
 
-- **Production is slow because the functions and the database are in
-  different regions.** Functions run in `iad1` (Washington), the Neon database
-  is in `ap-southeast-1` (Singapore), so every query crosses the Pacific at
-  about 230 ms. A single-query API call takes ~400 ms to first byte and
-  registering a company takes ~45 seconds, since provisioning makes ~40
-  sequential writes that the HTTP driver cannot batch. Invisible in
-  development, where the server is near the database. See the 2026-11-05
-  changelog entry for the two ways to fix it; both are the owner's call.
-  Both symptoms are gone as of 2026-11-06: a cold start no longer re-applies
-  the schema, which had made the first sign-in after an idle period take 35
-  seconds against 1.5 warm, and registering a company is four round trips
-  rather than 45. What remains is the per-query latency itself, which only a
-  region move fixes.
+- **Latency is fixed; the fix has a trade.** Functions ran in `iad1`
+  (Washington) against a database in `ap-southeast-1` (Singapore), so every
+  query crossed the Pacific at ~230 ms: registering a company took ~45
+  seconds and the first sign-in after an idle period 35. Three changes on
+  2026-11-06 — a cold start no longer re-applies the schema, provisioning
+  runs in four waves rather than 45 sequential writes, and `vercel.json`
+  pins the functions to `sin1` — brought those to 1.0 s and 1.06 s, with a
+  warm page at 1.04 s. The trade is that visitors far from Singapore now pay
+  the distance instead of the database; right for an office in Dhaka, and one
+  line to reverse. Note the Vercel dashboard still shows `iad1`, because
+  `vercel.json` overrides the project setting without changing it.
 - **The map has not been seen with data on it.** Leaflet renders its empty
   state correctly, but no device has reported a position through the UI, so
   markers, clustering and route playback are still only exercised by the

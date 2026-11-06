@@ -77,6 +77,16 @@ drift stale.
 - New dependencies need a reason recorded in `docs/PLAN.md`. The brief asked
   for the most optimised design; prefer a few lines of own code over a package.
 
+## Hosting
+
+- Functions run in `sin1` (Singapore), beside the Neon database in
+  `ap-southeast-1`, pinned by `regions` in `vercel.json`. That file overrides
+  the project's dashboard region without changing it, so Vercel's settings
+  page still reads `iad1` — the deployment is the truth, and
+  `x-vercel-id: <edge>::<function region>::…` proves it on any response. Keep
+  the two regions together: splitting them put ~230 ms on every query and was
+  the cause of every latency complaint in this project's history.
+
 ## Neon tooling
 
 - The `neon` and `neon-postgres` agent skills are vendored in
