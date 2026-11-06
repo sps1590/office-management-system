@@ -139,7 +139,12 @@ drift stale.
 - All SQL goes through the Neon tagged template (`` sql`...` ``) or
   `sql.query(text)` for schema DDL — never string-concatenate user input into
   a query.
-- Schema changes in `src/lib/schema.ts` must stay idempotent (`CREATE ... IF
+- Schema changes in `src/lib/schema/` must stay idempotent (`CREATE ... IF
   NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DROP CONSTRAINT IF EXISTS` then
   re-add). There is no separate migration runner: the same statement list
-  creates a fresh database and migrates the deployed one on every cold start.
+  creates a fresh database and migrates the deployed one. It is applied when
+  it has *changed* — `db.ts` fingerprints the statements, plans and role
+  templates and records that in `schema_state`, so an unchanged schema costs
+  one query on a cold start instead of 140-odd round trips. Nothing to bump
+  by hand: edit any statement and the fingerprint moves. `SCHEMA_REFRESH=1`
+  forces the full run, for a database changed out of band.

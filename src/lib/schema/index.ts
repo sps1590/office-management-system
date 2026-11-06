@@ -2,8 +2,9 @@
 //
 // There is no separate migration runner. This ordered list of idempotent
 // statements both creates a fresh database and brings an already-deployed one
-// up to date, and it is executed once per server process on the first request
-// (see src/lib/db.ts). That means every statement must be safe to run against
+// up to date, and it is executed on the first request of a server process
+// whose fingerprint does not match the one recorded in schema_state (see
+// ensureSchema in src/lib/db.ts). That means every statement must be safe to run against
 // a database where it has already been applied:
 //
 //   CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS

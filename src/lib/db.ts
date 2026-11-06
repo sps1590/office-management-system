@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import {
   neon,
   types as pgTypes,
@@ -156,13 +157,77 @@ async function pruneEphemeral() {
             -- tenancy-ok: housekeeping, the table has no tenant column`;
 }
 
+/*
+   The statement list is still the only migration mechanism -- it both creates
+   a fresh database and brings a deployed one up to date -- but it no longer
+   runs on every cold start. It cannot be batched (the HTTP driver has no
+   multi-statement transaction), so applying it meant one round trip per
+   statement before the first request could finish: measured at 35 seconds
+   from a function in Washington to a database in Singapore, against 1.5
+   seconds warm. The first person to sign in after an idle period waited half
+   a minute and reasonably concluded the app was broken.
+
+   So the database records the fingerprint of the schema it is already at, and
+   a cold start reads it in one query. Identical means there is nothing to
+   apply. Change any statement, plan or role template and the fingerprint
+   changes with it, which is what makes this safe to forget about: there is no
+   version number for anyone to remember to bump.
+
+   What it does not catch is the database being changed underneath us -- a
+   column dropped by hand still matches the recorded fingerprint. Set
+   SCHEMA_REFRESH=1 to force the full run and repair it.
+*/
+let fingerprint: string | undefined;
+
+function schemaFingerprint(): string {
+  if (!fingerprint) {
+    fingerprint = createHash("sha256")
+      .update(JSON.stringify([SCHEMA_STATEMENTS, DEFAULT_PLANS, SYSTEM_ROLES]))
+      .digest("hex")
+      .slice(0, 32);
+  }
+  return fingerprint;
+}
+
+/** The fingerprint of the last applied schema, or null if there is none. */
+async function appliedFingerprint(): Promise<string | null> {
+  const sql = connect();
+  try {
+    const rows = await sql`
+      SELECT fingerprint FROM schema_state WHERE id = 1
+      -- tenancy-ok: one row describing the database's own schema
+    `;
+    return (rows[0] as { fingerprint: string } | undefined)?.fingerprint ?? null;
+  } catch (err) {
+    // schema_state is itself part of the statement list, so on a database
+    // that has never been set up it does not exist yet. That is a mismatch,
+    // not a failure -- but anything else is, and must not be mistaken for one.
+    if ((err as { code?: string }).code === "42P01") return null;
+    throw err;
+  }
+}
+
 async function ensureSchema(): Promise<void> {
   const sql = connect();
-  for (const statement of SCHEMA_STATEMENTS) {
-    await sql.query(statement);
+  const wanted = schemaFingerprint();
+
+  if (process.env.SCHEMA_REFRESH === "1" || (await appliedFingerprint()) !== wanted) {
+    for (const statement of SCHEMA_STATEMENTS) {
+      await sql.query(statement);
+    }
+    await seedSubscriptionPlans();
+    await seedSystemRoleTemplates();
+    await sql`
+      INSERT INTO schema_state (id, fingerprint) VALUES (1, ${wanted})
+      ON CONFLICT (id) DO UPDATE
+        SET fingerprint = EXCLUDED.fingerprint, applied_at = now()
+      -- tenancy-ok: one row describing the database's own schema
+    `;
   }
-  await seedSubscriptionPlans();
-  await seedSystemRoleTemplates();
+
+  // Neither of these is schema. The platform-admin list lives in an env var
+  // that can change while the statements do not, and the housekeeping has to
+  // happen whatever the fingerprint says -- three round trips, not a hundred.
   await syncPlatformAdmins();
   await pruneEphemeral();
 }

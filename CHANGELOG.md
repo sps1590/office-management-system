@@ -3,6 +3,51 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-06 — The schema stops re-applying itself on every cold start
+
+Turning off Vercel Authentication finally made the deployed app measurable
+from outside, and the first sign-in after an idle period took **35 seconds**
+against **1.5 seconds** warm. Not the Pacific crossing in general: it was
+`ensureSchema()`. The statement list cannot be batched, because the Neon HTTP
+driver has no multi-statement transaction, so a cold start spent 140-odd
+sequential round trips to Singapore re-applying a schema that was already
+there before it would answer the first request. The first person to sign in
+each morning concluded the app was broken.
+
+The statement list is still the only migration mechanism, and it still both
+creates a fresh database and migrates a deployed one. It just runs when it has
+something to do. `db.ts` hashes the statements, the subscription plans and the
+system role templates into a fingerprint and `schema_state` records the one
+the database is at; a cold start reads it in a single query and, on a match,
+applies nothing.
+
+There is no version number to remember to bump — change any statement and the
+hash moves with it. What a hash cannot see is the database being altered
+underneath us, so `SCHEMA_REFRESH=1` forces the full run and repairs it.
+
+Two things deliberately still run on every cold start: `syncPlatformAdmins()`,
+because `PLATFORM_ADMIN_IDENTIFIERS` can change while the schema does not, and
+`pruneEphemeral()`. Three round trips, not a hundred and forty.
+
+### Measured
+Locally, Bangladesh to Singapore, timing the first sign-in of a freshly
+started process:
+
+| Cold start | First request | `schema_state.applied_at` |
+| --- | --- | --- |
+| nothing recorded yet | 12.2 s | written |
+| fingerprint matches | **2.1 s** | untouched |
+| `SCHEMA_REFRESH=1` | 12.2 s | rewritten |
+
+The untouched timestamp is the proof it skipped rather than re-applied
+quickly. The production saving is larger, since each of those round trips is
+~230 ms from `iad1` rather than ~25 ms from Dhaka.
+
+### Also
+`schema_state` is a new table, non-tenant-scoped, which `check:tenancy` works
+out for itself from the absence of a `tenant_id` column — 59 of 63 tables
+scoped, every scoped query still filtered.
+
 ## 2026-11-06 — Counters now count the company's day, not the database's
 
 The previous entry fixed how a wall clock is stored and rendered, and left one

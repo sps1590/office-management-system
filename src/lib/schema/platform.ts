@@ -3,6 +3,14 @@
 // tenant_id itself, so these statements run first.
 
 export const PLATFORM_SCHEMA: string[] = [
+  // One row describing the schema this database is already at, so a cold
+  // start can skip re-applying the whole list. See ensureSchema in db.ts.
+  `CREATE TABLE IF NOT EXISTS schema_state (
+     id          INTEGER PRIMARY KEY,
+     fingerprint TEXT NOT NULL,
+     applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+
   `CREATE TABLE IF NOT EXISTS subscription_plans (
      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
      key           TEXT NOT NULL UNIQUE,
