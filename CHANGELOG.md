@@ -3,6 +3,44 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-06 — Registering a company in four round trips instead of 45
+
+The last of the slow paths. `provisionTenant` made 45 writes, each its own
+HTTP request, each ~230 ms from `iad1` to `ap-southeast-1`: one tenant, 9
+roles, a department, the admin, a profile, a department update, a doc
+sequence, 5 leave types, 17 accounts and 6 pipeline stages, strictly one after
+another.
+
+Every repeated insert is now a single statement that reads its rows from
+`unnest` of array parameters -- still the Neon tagged template, still fully
+parameterised, no SQL built by string. The result runs in four waves:
+
+1. the tenant, for its id;
+2. roles, department, settings and subscription, concurrently;
+3. the admin, who needs a role and a department to exist;
+4. profile, department head, doc sequence, leave types, accounts and stages.
+
+### The waves are the old ordering, kept
+The function's docstring promised that a failure part-way leaves a company
+merely missing some defaults, never an orphaned user. Running everything at
+once would have broken that: a failed leave-types insert would have aborted
+before the admin was created, leaving a company nobody could sign in to --
+strictly worse than before. So wave 2 holds only what the first login needs
+and wave 4 holds what can be re-seeded by hand.
+
+### Verified by diffing against a tenant the old code built
+A throwaway company registered through the form, then every provisioned table
+compared row for row with NMCP, which the sequential code had created:
+
+| | |
+| --- | --- |
+| roles, accounts, leave types, pipeline stages | identical |
+| settings, subscription | identical |
+| admin | EMP-00001, company_admin, Management, permanent, joined today |
+
+Counts alone would not have caught a mis-mapped `unnest` column, which is why
+the comparison is on values. The throwaway tenant was deleted afterwards.
+
 ## 2026-11-06 — The schema stops re-applying itself on every cold start
 
 Turning off Vercel Authentication finally made the deployed app measurable

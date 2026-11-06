@@ -62,9 +62,16 @@ const DEFAULT_PO_TIERS = [
  *
  * Not wrapped in a transaction: the Neon HTTP driver issues each statement as
  * its own request, and a multi-statement transaction would need the WebSocket
- * driver. The order below is chosen so a failure part-way leaves a tenant that
- * is simply missing some defaults — recoverable — rather than an orphaned
- * user who cannot be matched to a company.
+ * driver. That made this the slowest path in the app -- 45 statements, one
+ * round trip each, ~230 ms apiece from a function in Washington to a database
+ * in Singapore -- so it runs in four waves instead, each wave concurrent and
+ * every repeated insert collapsed into one `unnest` statement.
+ *
+ * The waves also preserve what the old ordering gave us: a failure part-way
+ * leaves a tenant that is merely missing some defaults, never an orphaned
+ * user with no company or a company whose admin cannot sign in. So everything
+ * the first login needs -- roles, a department, settings -- lands before the
+ * user, and the reference data that can be re-seeded later lands after.
  */
 export async function provisionTenant(input: {
   companyName: string;
@@ -94,37 +101,44 @@ export async function provisionTenant(input: {
   `;
   const tenantId = (tenantRows[0] as { id: string }).id;
 
-  await db`
-    INSERT INTO tenant_settings (tenant_id, po_approval_tiers)
-    VALUES (${tenantId}, ${JSON.stringify(DEFAULT_PO_TIERS)}::jsonb)
-    ON CONFLICT (tenant_id) DO NOTHING
-  `;
-
-  await db`
-    INSERT INTO tenant_subscriptions (tenant_id, plan_key, status, renews_on, amount)
-    VALUES (${tenantId}, 'business', 'active', ${inThirtyDays}::date, 0)
-  `;
-
-  // The tenant's own copy of the role matrix. Editing it later affects only
-  // this company; the templates in db.ts stay untouched.
-  const roleIds: Record<string, string> = {};
-  for (const r of TENANT_ROLE_TEMPLATES) {
-    const rows = await db`
-      INSERT INTO roles (tenant_id, key, role_name, description, permissions_matrix, is_system, sort_order)
-      VALUES (${tenantId}, ${r.key}, ${r.name}, ${r.description},
-              ${JSON.stringify(r.matrix)}::jsonb, TRUE, ${r.sort_order})
+  // Wave 2: everything the admin's first login depends on. Concurrent, so
+  // the cost is one round trip rather than twelve.
+  const [roleRows, deptRows] = await Promise.all([
+    db`
+      INSERT INTO roles (tenant_id, key, role_name, description, permissions_matrix,
+                         is_system, sort_order)
+      SELECT ${tenantId}, k, n, d, m, TRUE, o
+        FROM unnest(${TENANT_ROLE_TEMPLATES.map((r) => r.key)}::text[],
+                    ${TENANT_ROLE_TEMPLATES.map((r) => r.name)}::text[],
+                    ${TENANT_ROLE_TEMPLATES.map((r) => r.description)}::text[],
+                    ${TENANT_ROLE_TEMPLATES.map((r) => JSON.stringify(r.matrix))}::jsonb[],
+                    ${TENANT_ROLE_TEMPLATES.map((r) => r.sort_order)}::int[])
+             AS t(k, n, d, m, o)
+      RETURNING id, key
+    `,
+    db`
+      INSERT INTO departments (tenant_id, name, code)
+      VALUES (${tenantId}, 'Management', 'MGT')
       RETURNING id
-    `;
-    roleIds[r.key] = (rows[0] as { id: string }).id;
-  }
+    `,
+    db`
+      INSERT INTO tenant_settings (tenant_id, po_approval_tiers)
+      VALUES (${tenantId}, ${JSON.stringify(DEFAULT_PO_TIERS)}::jsonb)
+      ON CONFLICT (tenant_id) DO NOTHING
+    `,
+    db`
+      INSERT INTO tenant_subscriptions (tenant_id, plan_key, status, renews_on, amount)
+      VALUES (${tenantId}, 'business', 'active', ${inThirtyDays}::date, 0)
+    `,
+  ]);
 
-  const deptRows = await db`
-    INSERT INTO departments (tenant_id, name, code)
-    VALUES (${tenantId}, 'Management', 'MGT')
-    RETURNING id
-  `;
+  const roleIds: Record<string, string> = {};
+  for (const r of roleRows as unknown as { id: string; key: string }[]) {
+    roleIds[r.key] = r.id;
+  }
   const departmentId = (deptRows[0] as { id: string }).id;
 
+  // Wave 3: the company admin, who needs a role and a department to exist.
   const userRows = await db`
     INSERT INTO users (tenant_id, role_id, department_id, full_name, email, phone,
                        password_hash, employee_code, designation, status)
@@ -135,40 +149,56 @@ export async function provisionTenant(input: {
   `;
   const userId = (userRows[0] as { id: string }).id;
 
-  await db`
-    INSERT INTO employee_profiles (user_id, tenant_id, date_of_joining, employment_type)
-    VALUES (${userId}, ${tenantId}, ${today}::date, 'permanent')
-  `;
-  await db`UPDATE departments SET head_user_id = ${userId}
-           WHERE id = ${departmentId} AND tenant_id = ${tenantId}`;
-  await db`INSERT INTO doc_sequences (tenant_id, kind, next_value)
-           VALUES (${tenantId}, 'employee', 2)
-           ON CONFLICT (tenant_id, kind) DO NOTHING`;
-
-  for (const [i, t] of DEFAULT_LEAVE_TYPES.entries()) {
-    await db`
+  // Wave 4: the admin can already sign in, so anything that fails here leaves
+  // a usable company missing a default someone can re-add by hand.
+  await Promise.all([
+    db`
+      INSERT INTO employee_profiles (user_id, tenant_id, date_of_joining, employment_type)
+      VALUES (${userId}, ${tenantId}, ${today}::date, 'permanent')
+    `,
+    db`UPDATE departments SET head_user_id = ${userId}
+        WHERE id = ${departmentId} AND tenant_id = ${tenantId}`,
+    db`INSERT INTO doc_sequences (tenant_id, kind, next_value)
+        VALUES (${tenantId}, 'employee', 2)
+        ON CONFLICT (tenant_id, kind) DO NOTHING`,
+    db`
       INSERT INTO leave_types (tenant_id, key, name, annual_quota, is_paid, color, sort_order)
-      VALUES (${tenantId}, ${t.key}, ${t.name}, ${t.quota}, ${t.paid}, ${t.color}, ${i + 1})
+      SELECT ${tenantId}, k, n, q, p, c, o
+        FROM unnest(${DEFAULT_LEAVE_TYPES.map((t) => t.key)}::text[],
+                    ${DEFAULT_LEAVE_TYPES.map((t) => t.name)}::text[],
+                    ${DEFAULT_LEAVE_TYPES.map((t) => t.quota)}::numeric[],
+                    ${DEFAULT_LEAVE_TYPES.map((t) => t.paid)}::boolean[],
+                    ${DEFAULT_LEAVE_TYPES.map((t) => t.color)}::text[],
+                    ${DEFAULT_LEAVE_TYPES.map((_, i) => i + 1)}::int[])
+             AS t(k, n, q, p, c, o)
       ON CONFLICT (tenant_id, key) DO NOTHING
-    `;
-  }
-
-  for (const [i, a] of DEFAULT_ACCOUNTS.entries()) {
-    await db`
+    `,
+    db`
       INSERT INTO accounts (tenant_id, code, key, name, type, sort_order)
-      VALUES (${tenantId}, ${a.code}, ${a.key}, ${a.name}, ${a.type}, ${i + 1})
+      SELECT ${tenantId}, c, k, n, ty, o
+        FROM unnest(${DEFAULT_ACCOUNTS.map((a) => a.code)}::text[],
+                    ${DEFAULT_ACCOUNTS.map((a) => a.key)}::text[],
+                    ${DEFAULT_ACCOUNTS.map((a) => a.name)}::text[],
+                    ${DEFAULT_ACCOUNTS.map((a) => a.type)}::text[],
+                    ${DEFAULT_ACCOUNTS.map((_, i) => i + 1)}::int[])
+             AS t(c, k, n, ty, o)
       ON CONFLICT (tenant_id, code) DO NOTHING
-    `;
-  }
-
-  for (const s of DEFAULT_STAGES) {
-    await db`
-      INSERT INTO pipeline_stages (tenant_id, key, name, sort_order, probability, is_won, is_lost, color)
-      VALUES (${tenantId}, ${s.key}, ${s.name}, ${s.order}, ${s.probability},
-              ${s.won}, ${s.lost}, ${s.color})
+    `,
+    db`
+      INSERT INTO pipeline_stages (tenant_id, key, name, sort_order, probability,
+                                   is_won, is_lost, color)
+      SELECT ${tenantId}, k, n, o, pr, w, l, c
+        FROM unnest(${DEFAULT_STAGES.map((x) => x.key)}::text[],
+                    ${DEFAULT_STAGES.map((x) => x.name)}::text[],
+                    ${DEFAULT_STAGES.map((x) => x.order)}::int[],
+                    ${DEFAULT_STAGES.map((x) => x.probability)}::numeric[],
+                    ${DEFAULT_STAGES.map((x) => x.won)}::boolean[],
+                    ${DEFAULT_STAGES.map((x) => x.lost)}::boolean[],
+                    ${DEFAULT_STAGES.map((x) => x.color)}::text[])
+             AS t(k, n, o, pr, w, l, c)
       ON CONFLICT (tenant_id, key) DO NOTHING
-    `;
-  }
+    `,
+  ]);
 
   return { tenantId, userId };
 }

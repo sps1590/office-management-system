@@ -230,10 +230,11 @@ That run surfaced the cross-region latency problem recorded under
   sequential writes that the HTTP driver cannot batch. Invisible in
   development, where the server is near the database. See the 2026-11-05
   changelog entry for the two ways to fix it; both are the owner's call.
-  The worst symptom is gone as of 2026-11-06: a cold start no longer
-  re-applies the schema, which had made the first sign-in after an idle
-  period take 35 seconds against 1.5 warm. Provisioning's ~40 writes are
-  still sequential.
+  Both symptoms are gone as of 2026-11-06: a cold start no longer re-applies
+  the schema, which had made the first sign-in after an idle period take 35
+  seconds against 1.5 warm, and registering a company is four round trips
+  rather than 45. What remains is the per-query latency itself, which only a
+  region move fixes.
 - **The map has not been seen with data on it.** Leaflet renders its empty
   state correctly, but no device has reported a position through the UI, so
   markers, clustering and route playback are still only exercised by the
