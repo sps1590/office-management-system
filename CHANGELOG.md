@@ -42,6 +42,16 @@ enter a valid value" and two numbers either side of it. Coordinate inputs now
 use `step="any"` and let `NUMERIC(10,7)` round, which it does to about a
 centimetre.
 
+### A mistyped geofence could not be corrected
+
+Disabling a fence keeps its name, and the name is unique per company, so an
+admin who put the centre in the wrong place could neither fix it nor reuse
+the name — a dead end on the mistake most likely to be made. Geofences can
+be deleted now, behind `tracking.delete` and a confirmation that says the
+alert history goes with it; attendance rows survive, because that reference
+is ON DELETE SET NULL. The same guard as disabling applies: the last active
+office fence cannot go while check-in requires one.
+
 ### A refusal aimed at a checkbox went nowhere
 
 `AutoForm`'s checkbox branch rendered no `FieldError`, so any

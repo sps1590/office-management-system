@@ -15,6 +15,7 @@ import {
   createGeofenceAction,
   purgeTelemetryAction,
   revokeDeviceAction,
+  deleteGeofenceAction,
   toggleGeofenceAction,
 } from "@/lib/actions/tracking";
 import ActionButton from "@/components/ActionButton";
@@ -39,6 +40,7 @@ export default async function TrackingPage() {
 
   const canCreate = hasPermission(user, "tracking", "create");
   const canEdit = hasPermission(user, "tracking", "edit");
+  const canDelete = hasPermission(user, "tracking", "delete");
   const canPurge = hasPermission(user, "tracking", "delete");
 
   return (
@@ -174,7 +176,7 @@ export default async function TrackingPage() {
                       <th className="right">Assigned</th>
                       <th>Alerts</th>
                       <th>Status</th>
-                      {canEdit && <th></th>}
+                      {(canEdit || canDelete) && <th></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -213,14 +215,27 @@ export default async function TrackingPage() {
                         <td>
                           <StatusBadge status={f.is_active ? "active" : "inactive"} />
                         </td>
-                        {canEdit && (
+                        {(canEdit || canDelete) && (
                           <td>
-                            <ActionButton
-                              action={toggleGeofenceAction}
-                              values={{ geofenceId: f.id }}
-                              label={f.is_active ? "Disable" : "Enable"}
-                              className="btn-ghost btn-sm"
-                            />
+                            <div className="flex items-start gap-1">
+                              {canEdit && (
+                                <ActionButton
+                                  action={toggleGeofenceAction}
+                                  values={{ geofenceId: f.id }}
+                                  label={f.is_active ? "Disable" : "Enable"}
+                                  className="btn-ghost btn-sm"
+                                />
+                              )}
+                              {canDelete && (
+                                <ActionButton
+                                  action={deleteGeofenceAction}
+                                  values={{ geofenceId: f.id }}
+                                  label="Delete"
+                                  className="btn-ghost btn-sm text-danger"
+                                  confirm={`Delete the geofence "${f.name}"? Its alert history goes with it. Disabling keeps the history instead.`}
+                                />
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>

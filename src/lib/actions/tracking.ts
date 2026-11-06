@@ -185,6 +185,74 @@ export async function toggleGeofenceAction(
   return { success: `${row.name} ${row.is_active ? "activated" : "deactivated"}.` };
 }
 
+/**
+ * Removes a geofence outright.
+ *
+ * Deactivating keeps the history but holds the name, and the name is unique
+ * per company -- so an admin who mistyped a centre could neither fix it nor
+ * reuse the name, which is a dead end for the one mistake most likely to be
+ * made. Attendance keeps its rows (the reference is ON DELETE SET NULL);
+ * the fence's own assignments and alert history go with it, which is why
+ * deactivating is still offered beside this.
+ */
+export async function deleteGeofenceAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("tracking", "delete");
+  const geofenceId = String(formData.get("geofenceId") ?? "");
+  const db = await getDb();
+
+  const before = await db`
+    SELECT g.name,
+           g.kind,
+           g.is_active,
+           s.require_geofenced_checkin AS gated,
+           (SELECT COUNT(*)::int FROM geofences o
+             WHERE o.tenant_id = ${user.tenant_id}
+               AND o.is_active
+               AND o.kind IN ('office','warehouse')) AS active_offices
+      FROM geofences g
+      JOIN tenant_settings s ON s.tenant_id = g.tenant_id
+     WHERE g.id = ${geofenceId} AND g.tenant_id = ${user.tenant_id}
+  `;
+  if (before.length === 0) return { error: "Geofence not found." };
+  const state = before[0] as {
+    name: string;
+    kind: string;
+    is_active: boolean;
+    gated: boolean;
+    active_offices: number;
+  };
+  // Same rule as deactivating: do not leave the company unable to check in.
+  if (
+    state.is_active &&
+    state.gated &&
+    ["office", "warehouse"].includes(state.kind) &&
+    state.active_offices <= 1
+  ) {
+    return {
+      error:
+        "This is the only active office geofence, and check-in currently requires " +
+        "one — deleting it would refuse every check-in in the company. Add the " +
+        "replacement first, or turn off the location requirement in Settings.",
+    };
+  }
+
+  await db`DELETE FROM geofences WHERE id = ${geofenceId} AND tenant_id = ${user.tenant_id}`;
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "geofence.deleted",
+    entity: "geofence",
+    entityId: geofenceId,
+    summary: `Deleted geofence ${state.name}`,
+  });
+  revalidatePath("/tracking");
+  return { success: `${state.name} deleted.` };
+}
+
 export async function revokeDeviceAction(
   _prev: ActionState,
   formData: FormData
