@@ -818,14 +818,16 @@ export async function receivePurchaseOrderAction(
 
     await db`
       INSERT INTO vendor_price_history (tenant_id, vendor_id, inventory_item_id, description,
-                                        unit_price, purchase_order_id)
+                                        unit_price, purchase_order_id, recorded_on)
       VALUES (${user.tenant_id}, ${po.vendor_id}, ${line.inventory_item_id},
-              ${line.description}, ${line.unit_price}, ${poId})
+              ${line.description}, ${line.unit_price}, ${poId},
+              ${isoDate(user.tenant.timezone)}::date)
     `;
   }
 
   await db`
-    UPDATE purchase_orders SET status = 'received', received_date = CURRENT_DATE
+    UPDATE purchase_orders SET status = 'received',
+           received_date = ${isoDate(user.tenant.timezone)}::date
      WHERE id = ${poId} AND tenant_id = ${user.tenant_id}
   `;
 

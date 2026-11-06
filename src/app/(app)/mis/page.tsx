@@ -39,8 +39,8 @@ export const metadata: Metadata = { title: "Executive MIS" };
  */
 export default async function MisPage() {
   const user = await requirePermission("mis", "view");
-  const currency = user.tenant.currency;
   const tz = user.tenant.timezone;
+  const currency = user.tenant.currency;
   const year = Number(isoDate(tz).slice(0, 4));
 
   const [
@@ -65,20 +65,20 @@ export default async function MisPage() {
     employeeStats(user.tenant_id),
     attendanceSummary(user.tenant_id, isoDate(tz)),
     attendanceTrend(user.tenant_id, tz, 21),
-    fleetStats(user.tenant_id),
+    fleetStats(user.tenant_id, tz),
     inventoryStats(user.tenant_id),
-    procurementStats(user.tenant_id),
-    crmStats(user.tenant_id),
+    procurementStats(user.tenant_id, tz),
+    crmStats(user.tenant_id, tz),
     pipelineByStage(user.tenant_id),
-    visitStats(user.tenant_id),
-    financeStats(user.tenant_id),
-    cashFlowTrend(user.tenant_id, 6),
+    visitStats(user.tenant_id, tz),
+    financeStats(user.tenant_id, tz),
+    cashFlowTrend(user.tenant_id, tz, 6),
     incomeStatement(user.tenant_id, `${year}-01-01`, isoDate(tz)),
-    trackingStats(user.tenant_id),
+    trackingStats(user.tenant_id, tz),
     livePositions(user.tenant_id),
     mapSites(user.tenant_id),
     listGeofenceEvents(user.tenant_id, 8),
-    taskStats(user.tenant_id, user.id),
+    taskStats(user.tenant_id, user.id, tz),
   ]);
 
   const attendanceRate = percent(attendance.present, attendance.headcount || 1);

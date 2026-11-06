@@ -30,7 +30,7 @@ export default async function OperationsMapPage({
     livePositions(user.tenant_id),
     listGeofences(user.tenant_id),
     mapSites(user.tenant_id),
-    trackingStats(user.tenant_id),
+    trackingStats(user.tenant_id, tz),
     listGeofenceEvents(user.tenant_id, 15),
     sp.route ? userRoute(user.tenant_id, sp.route, date) : Promise.resolve([]),
   ]);
@@ -57,7 +57,7 @@ export default async function OperationsMapPage({
           icon={<Radio size={16} />}
           tone={stats.live_now > 0 ? "success" : "default"}
         />
-        <KpiCard label="Active in last 24 hours" value={stats.active_today} />
+        <KpiCard label="Active today" value={stats.active_today} />
         <KpiCard
           label="Coordinates logged today"
           value={num(stats.points_today)}

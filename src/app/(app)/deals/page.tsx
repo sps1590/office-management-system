@@ -21,11 +21,12 @@ export const metadata: Metadata = { title: "Pipeline" };
 
 export default async function DealsPage() {
   const user = await requirePermission("crm", "view");
+  const tz = user.tenant.timezone;
 
   const [deals, stages, stats, funnel, clients, people, activities] = await Promise.all([
     listDeals(user.tenant_id),
     listStages(user.tenant_id),
-    crmStats(user.tenant_id),
+    crmStats(user.tenant_id, tz),
     pipelineByStage(user.tenant_id),
     clientOptions(user.tenant_id),
     pickableUsers(user.tenant_id),
@@ -35,7 +36,6 @@ export default async function DealsPage() {
   const canCreate = hasPermission(user, "crm", "create");
   const canEdit = hasPermission(user, "crm", "edit");
   const currency = user.tenant.currency;
-  const tz = user.tenant.timezone;
 
   const openStages = stages.filter((s) => !s.is_won && !s.is_lost);
   const winRate = percent(stats.won_count, stats.won_count + stats.lost_count);

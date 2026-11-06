@@ -37,7 +37,7 @@ export default async function MaintenancePage({
 
   const open = records.filter((r) => r.status !== "completed" && r.status !== "cancelled");
   const overdue = open.filter(
-    (r) => r.scheduled_date && new Date(r.scheduled_date).getTime() < Date.now()
+    (r) => r.scheduled_date && r.scheduled_date < isoDate(tz)
   );
   const spendThisYear = records
     .filter((r) => r.completed_date?.startsWith(isoDate(tz).slice(0, 4)))
@@ -109,7 +109,7 @@ export default async function MaintenancePage({
                     const isOverdue =
                       r.status !== "completed" &&
                       r.scheduled_date &&
-                      new Date(r.scheduled_date).getTime() < Date.now();
+                      r.scheduled_date < isoDate(tz);
                     return (
                       <tr key={r.id}>
                         <td className="font-medium">{r.registration_number}</td>

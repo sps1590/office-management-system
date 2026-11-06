@@ -50,6 +50,17 @@ drift stale.
   string from the driver (`db.ts` sets the parser for OID 1082) all the way
   to the screen, and no zone is ever applied to it. Pushing one through a
   zone is how 09 Nov becomes 08 Nov for a tenant west of the server.
+- **Never ask the database what day it is.** `CURRENT_DATE` and `now()::date`
+  are the database session's day, which is UTC on Neon — not the company's.
+  A counter meaning "today", "this month", "this year" or "overdue" takes its
+  boundary from `calendarBounds(timeZone)`: a `YYYY-MM-DD` to compare a DATE
+  column, an instant to compare a TIMESTAMPTZ one. A DATE written as "now"
+  takes `isoDate(user.tenant.timezone)`. Bucketing a TIMESTAMPTZ by month is
+  the one thing that stays in SQL, as
+  `date_trunc('month', timezone(${timeZone}, col))`, because which month an
+  instant falls in depends on the zone. A rolling window (`now() - INTERVAL
+  '15 minutes'`) is a duration and needs no zone — but then do not label it
+  "today".
 - **A refusal that knows the way out offers it.** When an action can compute
   the alternative it is refusing in favour of — the next free window for a
   double-booked room — it returns `suggestions: [{ label, values }]` and

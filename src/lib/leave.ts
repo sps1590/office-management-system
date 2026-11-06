@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { calendarBounds } from "./utils";
 
 export type LeaveRequestRow = {
   id: string;
@@ -133,16 +134,18 @@ export async function leaveApprovalTrail(tenantId: string, requestId: string) {
   }[];
 }
 
-export async function leaveStats(tenantId: string) {
+export async function leaveStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT COUNT(*) FILTER (WHERE status = 'pending')::int   AS pending,
            COUNT(*) FILTER (WHERE status = 'approved'
-             AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE)::int AS on_leave_today,
+             AND start_date <= ${cal.today}::date
+             AND end_date >= ${cal.today}::date)::int AS on_leave_today,
            COUNT(*) FILTER (WHERE status = 'approved'
-             AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM CURRENT_DATE))::int AS approved_this_year,
+             AND EXTRACT(YEAR FROM start_date) = ${cal.year})::int AS approved_this_year,
            COALESCE(SUM(days) FILTER (WHERE status = 'approved'
-             AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM CURRENT_DATE)), 0)::float AS days_this_year
+             AND EXTRACT(YEAR FROM start_date) = ${cal.year}), 0)::float AS days_this_year
       FROM leave_requests WHERE tenant_id = ${tenantId}
   `;
   return rows[0] as {

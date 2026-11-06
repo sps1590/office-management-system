@@ -7,7 +7,7 @@ import { assignAssetAction, createAssetAction } from "@/lib/actions/workplace";
 import AutoForm from "@/components/forms/AutoForm";
 import FilterBar from "@/components/FilterBar";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
-import { compact, formatDate, money } from "@/lib/utils";
+import { addDays, compact, formatDate, isoDate, money } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Asset register" };
 
@@ -17,11 +17,12 @@ export default async function AssetsPage({
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
   const user = await requirePermission("assets", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [assets, stats, people, departments] = await Promise.all([
     listAssets(user.tenant_id, { q: sp.q, status: sp.status }),
-    assetStats(user.tenant_id),
+    assetStats(user.tenant_id, tz),
     pickableUsers(user.tenant_id),
     listDepartments(user.tenant_id),
   ]);
@@ -29,7 +30,6 @@ export default async function AssetsPage({
   const canCreate = hasPermission(user, "assets", "create");
   const canEdit = hasPermission(user, "assets", "edit");
   const currency = user.tenant.currency;
-  const tz = user.tenant.timezone;
 
   return (
     <>
@@ -101,7 +101,7 @@ export default async function AssetsPage({
                     {assets.map((a) => {
                       const warrantySoon =
                         a.warranty_expiry &&
-                        new Date(a.warranty_expiry).getTime() < Date.now() + 60 * 86_400_000;
+                        a.warranty_expiry < addDays(isoDate(tz), 60);
                       return (
                         <tr key={a.id}>
                           <td>

@@ -1,7 +1,7 @@
 import "server-only";
 import { getDb } from "./db";
 import { attendanceSummary, attendanceTrend } from "./attendance";
-import { isoDate } from "./utils";
+import { addDays, calendarBounds } from "./utils";
 
 /**
  * One data load for the whole dashboard. Every query runs concurrently in a
@@ -18,7 +18,8 @@ export async function loadDashboard(
   timeZone: string
 ) {
   const db = await getDb();
-  const today = isoDate(timeZone);
+  const cal = calendarBounds(timeZone);
+  const today = cal.today;
 
   const [
     attendance,
@@ -70,7 +71,7 @@ export async function loadDashboard(
              COUNT(*) FILTER (WHERE status = 'maintenance')::int       AS maintenance,
              COUNT(*) FILTER (WHERE status = 'available')::int         AS available,
              COUNT(*) FILTER (WHERE insurance_expiry IS NOT NULL
-                                AND insurance_expiry < CURRENT_DATE + 30)::int AS docs_expiring
+                                AND insurance_expiry < ${addDays(cal.today, 30)}::date)::int AS docs_expiring
         FROM vehicles WHERE tenant_id = ${tenantId}
     `,
 
@@ -85,21 +86,21 @@ export async function loadDashboard(
       SELECT COUNT(*) FILTER (WHERE status = 'open')::int                        AS open_deals,
              COALESCE(SUM(value) FILTER (WHERE status = 'open'), 0)::float        AS open_value,
              COALESCE(SUM(value) FILTER (WHERE status = 'won'
-               AND closed_at >= date_trunc('month', CURRENT_DATE)), 0)::float     AS won_this_month
+               AND closed_at >= ${cal.monthStartAt}), 0)::float     AS won_this_month
         FROM deals WHERE tenant_id = ${tenantId}
     `,
 
     db`
       SELECT COALESCE(SUM(total_amount - amount_paid), 0)::float            AS outstanding,
              COUNT(*) FILTER (WHERE status <> 'paid' AND status <> 'void'
-                                AND due_date < CURRENT_DATE)::int           AS overdue
+                                AND due_date < ${cal.today}::date)::int     AS overdue
         FROM invoices WHERE tenant_id = ${tenantId} AND status NOT IN ('draft','void')
     `,
 
     db`
       SELECT COALESCE(SUM(total_amount - amount_paid), 0)::float            AS outstanding,
              COUNT(*) FILTER (WHERE status <> 'paid' AND status <> 'void'
-                                AND due_date < CURRENT_DATE)::int           AS overdue
+                                AND due_date < ${cal.today}::date)::int     AS overdue
         FROM bills WHERE tenant_id = ${tenantId} AND status NOT IN ('draft','void')
     `,
 
@@ -142,8 +143,8 @@ export async function loadDashboard(
       SELECT to_char(m.month, 'Mon') AS label,
              COALESCE(SUM(p.amount) FILTER (WHERE p.direction = 'in'), 0)::float  AS inflow,
              COALESCE(SUM(p.amount) FILTER (WHERE p.direction = 'out'), 0)::float AS outflow
-        FROM generate_series(date_trunc('month', CURRENT_DATE) - INTERVAL '5 months',
-                             date_trunc('month', CURRENT_DATE), '1 month') AS m(month)
+        FROM generate_series(${cal.monthStart}::timestamp - INTERVAL '5 months',
+                             ${cal.monthStart}::timestamp, '1 month') AS m(month)
         LEFT JOIN payments p
                ON date_trunc('month', p.paid_on) = m.month AND p.tenant_id = ${tenantId}
        GROUP BY m.month

@@ -18,11 +18,12 @@ export default async function InvoicesPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("invoicing", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [invoices, stats, clients, deals, payments] = await Promise.all([
     listInvoices(user.tenant_id, { status: sp.status }),
-    financeStats(user.tenant_id),
+    financeStats(user.tenant_id, tz),
     clientOptions(user.tenant_id),
     listDeals(user.tenant_id, { status: "open" }),
     listPayments(user.tenant_id, 15),
@@ -30,7 +31,6 @@ export default async function InvoicesPage({
 
   const canCreate = hasPermission(user, "invoicing", "create");
   const currency = user.tenant.currency;
-  const tz = user.tenant.timezone;
   const unpaid = invoices.filter(
     (i) => i.status !== "paid" && i.status !== "void" && i.status !== "draft"
   );
@@ -108,7 +108,7 @@ export default async function InvoicesPage({
                     {invoices.map((i) => {
                       const overdue =
                         i.due_date &&
-                        new Date(i.due_date).getTime() < Date.now() &&
+                        i.due_date < isoDate(tz) &&
                         i.amount_paid < i.total_amount;
                       return (
                         <tr key={i.id}>

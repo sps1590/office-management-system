@@ -30,6 +30,7 @@ export default async function ExpensesPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("expenses", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const seesAll = canSeeEveryone(user, "expenses");
@@ -41,12 +42,11 @@ export default async function ExpensesPage({
       userId: seesAll ? undefined : user.id,
     }),
     listExpenseClaims(user.tenant_id, { userId: user.id }),
-    financeStats(user.tenant_id),
+    financeStats(user.tenant_id, tz),
   ]);
 
   const currency = user.tenant.currency;
 
-  const tz = user.tenant.timezone;
   const queue = claims.filter((c) => c.status === "pending" && c.user_id !== user.id);
   const approvedUnpaid = claims.filter((c) => c.status === "approved");
   const myPending = mine.filter((c) => c.status === "pending").length;

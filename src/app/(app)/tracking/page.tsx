@@ -29,10 +29,10 @@ export default async function TrackingPage() {
   const tz = user.tenant.timezone;
 
   const [devices, fences, events, stats, people, settings] = await Promise.all([
-    listDevices(user.tenant_id),
+    listDevices(user.tenant_id, tz),
     listGeofences(user.tenant_id),
     listGeofenceEvents(user.tenant_id, 30),
-    trackingStats(user.tenant_id),
+    trackingStats(user.tenant_id, tz),
     pickableUsers(user.tenant_id),
     getSettings(user.tenant_id),
   ]);
@@ -105,7 +105,7 @@ export default async function TrackingPage() {
                       <th>User</th>
                       <th>Device</th>
                       <th>Platform</th>
-                      <th className="right">Points, 24h</th>
+                      <th className="right">Points today</th>
                       <th>Last seen</th>
                       <th>Status</th>
                       {canEdit && <th></th>}

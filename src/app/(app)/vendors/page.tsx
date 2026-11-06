@@ -17,11 +17,12 @@ export default async function VendorsPage({
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
   const user = await requirePermission("vendors", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [vendors, spend] = await Promise.all([
     listVendors(user.tenant_id, { q: sp.q, status: sp.status }),
-    spendByVendor(user.tenant_id),
+    spendByVendor(user.tenant_id, tz),
   ]);
 
   const canCreate = hasPermission(user, "vendors", "create");

@@ -177,6 +177,68 @@ export function isoDate(timeZone: string, at: Date = new Date()): string {
   return `${w.year}-${w.month}-${w.day}`;
 }
 
+// --- the company's calendar -------------------------------------------------
+
+/*
+   A counter that says "today", "this month" or "overdue" has to mean it where
+   the company is. Postgres's CURRENT_DATE is the database session's day --
+   UTC on Neon -- so a Dhaka office read yesterday's figures until 06:00, and
+   a Toronto one tomorrow's after 19:00: an invoice due today was already
+   counted overdue, and a deal won on the 1st landed in last month's total.
+
+   So the boundaries are computed here from the tenant's zone and passed into
+   SQL as ordinary values -- a YYYY-MM-DD for a DATE column, an ISO instant
+   for a TIMESTAMPTZ one. Both are stable for the life of a request, which
+   `CURRENT_DATE` within a multi-query page was not.
+*/
+
+/** `day` shifted by `n` days, both as YYYY-MM-DD. */
+export function addDays(day: string, n: number): string {
+  const at = new Date(`${day}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + n);
+  return at.toISOString().slice(0, 10);
+}
+
+/** The instant a calendar day begins where the company is. */
+export function dayStart(day: string, timeZone: string): string {
+  return zonedToInstant(`${day}T00:00`, timeZone).toISOString();
+}
+
+export type CalendarBounds = {
+  /** The company's current calendar day, for comparing a DATE column. */
+  today: string;
+  /** First day of the company's current month and year, as calendar days. */
+  monthStart: string;
+  yearStart: string;
+  /** The company's current year, for an EXTRACT(YEAR …) comparison. */
+  year: number;
+  /** The same boundaries as instants, for comparing a TIMESTAMPTZ column. */
+  dayStartAt: string;
+  weekStartAt: string;
+  monthStartAt: string;
+  yearStartAt: string;
+};
+
+/** Every boundary a counter needs, in the company's own calendar. */
+export function calendarBounds(timeZone: string, at: Date = new Date()): CalendarBounds {
+  const today = isoDate(timeZone, at);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  // Weeks start on Monday, as Postgres's date_trunc('week', …) had them.
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const weekStart = addDays(today, -((weekday + 6) % 7));
+  return {
+    today,
+    monthStart,
+    yearStart,
+    year: Number(today.slice(0, 4)),
+    dayStartAt: dayStart(today, timeZone),
+    weekStartAt: dayStart(weekStart, timeZone),
+    monthStartAt: dayStart(monthStart, timeZone),
+    yearStartAt: dayStart(yearStart, timeZone),
+  };
+}
+
 /** True when the value is a bare DATE, which carries no zone to convert. */
 const isCalendarDay = (value: string | Date) =>
   typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -258,8 +320,8 @@ export function duration(minutes: number | null | undefined): string {
 
 /** Inclusive count of days between two YYYY-MM-DD strings. */
 export function daysBetween(start: string, end: string): number {
-  const a = new Date(`${start}T00:00:00`).getTime();
-  const b = new Date(`${end}T00:00:00`).getTime();
+  const a = new Date(`${start}T00:00:00Z`).getTime();
+  const b = new Date(`${end}T00:00:00Z`).getTime();
   return Math.floor((b - a) / 86_400_000) + 1;
 }
 

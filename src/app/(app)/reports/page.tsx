@@ -17,8 +17,8 @@ export const metadata: Metadata = { title: "Reports" };
 
 export default async function ReportsPage() {
   const user = await requirePermission("reports", "view");
-  const currency = user.tenant.currency;
   const tz = user.tenant.timezone;
+  const currency = user.tenant.currency;
   const year = Number(isoDate(tz).slice(0, 4));
 
   const [people, attendance, trend, fleet, fleetCost, inventory, procurement, vendorSpend, crm, funnel, finance, cash, pnl] =
@@ -26,15 +26,15 @@ export default async function ReportsPage() {
       employeeStats(user.tenant_id),
       attendanceSummary(user.tenant_id, isoDate(tz)),
       attendanceTrend(user.tenant_id, tz, 30),
-      fleetStats(user.tenant_id),
-      fleetCostTrend(user.tenant_id),
+      fleetStats(user.tenant_id, tz),
+      fleetCostTrend(user.tenant_id, tz),
       inventoryStats(user.tenant_id),
-      procurementStats(user.tenant_id),
-      spendByVendor(user.tenant_id, 6),
-      crmStats(user.tenant_id),
+      procurementStats(user.tenant_id, tz),
+      spendByVendor(user.tenant_id, tz, 6),
+      crmStats(user.tenant_id, tz),
       pipelineByStage(user.tenant_id),
-      financeStats(user.tenant_id),
-      cashFlowTrend(user.tenant_id, 6),
+      financeStats(user.tenant_id, tz),
+      cashFlowTrend(user.tenant_id, tz, 6),
       incomeStatement(user.tenant_id, `${year}-01-01`, isoDate(tz)),
     ]);
 

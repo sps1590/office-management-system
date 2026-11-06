@@ -13,7 +13,7 @@ import GeoActionForm from "@/components/GeoActionForm";
 import AutoForm from "@/components/forms/AutoForm";
 import FilterBar from "@/components/FilterBar";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
-import { formatDate, percent } from "@/lib/utils";
+import { formatDate, isoDate, percent } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Tasks" };
 
@@ -37,7 +37,7 @@ export default async function TasksPage({
       assignedTo: scope === "mine" || !seesAll ? user.id : undefined,
     }),
     listTasks(user.tenant_id, { assignedTo: user.id }),
-    taskStats(user.tenant_id, user.id),
+    taskStats(user.tenant_id, user.id, tz),
     listProjects(user.tenant_id),
     pickableUsers(user.tenant_id),
   ]);
@@ -185,7 +185,7 @@ export default async function TasksPage({
                       const overdue =
                         t.due_date &&
                         !["done", "cancelled"].includes(t.status) &&
-                        new Date(t.due_date).getTime() < Date.now();
+                        t.due_date < isoDate(tz);
                       return (
                         <tr key={t.id}>
                           <td>

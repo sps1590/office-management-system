@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { calendarBounds } from "./utils";
 
 export type Client = {
   id: string;
@@ -128,15 +129,16 @@ export async function listDeals(
   return rows as unknown as Deal[];
 }
 
-export async function crmStats(tenantId: string) {
+export async function crmStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT COUNT(*) FILTER (WHERE status = 'open')::int                          AS open_deals,
            COALESCE(SUM(value) FILTER (WHERE status = 'open'), 0)::float          AS open_value,
            COALESCE(SUM(value) FILTER (WHERE status = 'won'
-             AND closed_at >= date_trunc('month', CURRENT_DATE)), 0)::float        AS won_month,
+             AND closed_at >= ${cal.monthStartAt}), 0)::float        AS won_month,
            COALESCE(SUM(value) FILTER (WHERE status = 'won'
-             AND closed_at >= date_trunc('year', CURRENT_DATE)), 0)::float         AS won_year,
+             AND closed_at >= ${cal.yearStartAt}), 0)::float         AS won_year,
            COUNT(*) FILTER (WHERE status = 'won')::int                            AS won_count,
            COUNT(*) FILTER (WHERE status = 'lost')::int                           AS lost_count
       FROM deals WHERE tenant_id = ${tenantId}
@@ -239,15 +241,16 @@ export async function listFieldVisits(
   return rows as unknown as FieldVisit[];
 }
 
-export async function visitStats(tenantId: string) {
+export async function visitStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT COUNT(*) FILTER (WHERE status = 'planned')::int    AS planned,
            COUNT(*) FILTER (WHERE status = 'in_progress')::int AS in_progress,
            COUNT(*) FILTER (WHERE status = 'completed'
-             AND checked_in_at >= date_trunc('month', CURRENT_DATE))::int AS completed_month,
+             AND checked_in_at >= ${cal.monthStartAt})::int AS completed_month,
            COUNT(*) FILTER (WHERE status = 'completed' AND verified = TRUE
-             AND checked_in_at >= date_trunc('month', CURRENT_DATE))::int AS verified_month
+             AND checked_in_at >= ${cal.monthStartAt})::int AS verified_month
       FROM field_visits WHERE tenant_id = ${tenantId}
   `;
   return rows[0] as {

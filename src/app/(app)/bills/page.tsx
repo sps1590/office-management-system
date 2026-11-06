@@ -17,18 +17,18 @@ export default async function BillsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("invoicing", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [bills, stats, vendors, orders] = await Promise.all([
     listBills(user.tenant_id, { status: sp.status }),
-    financeStats(user.tenant_id),
+    financeStats(user.tenant_id, tz),
     vendorOptions(user.tenant_id),
     listPurchaseOrders(user.tenant_id, { status: "received" }),
   ]);
 
   const canCreate = hasPermission(user, "invoicing", "create");
   const currency = user.tenant.currency;
-  const tz = user.tenant.timezone;
   const unpaid = bills.filter((b) => b.status !== "paid" && b.status !== "void");
 
   return (
@@ -94,7 +94,7 @@ export default async function BillsPage({
                   {bills.map((b) => {
                     const overdue =
                       b.due_date &&
-                      new Date(b.due_date).getTime() < Date.now() &&
+                      b.due_date < isoDate(tz) &&
                       b.amount_paid < b.total_amount;
                     return (
                       <tr key={b.id}>

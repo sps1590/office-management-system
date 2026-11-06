@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { calendarBounds } from "./utils";
 
 /* --- vendors -------------------------------------------------------------- */
 
@@ -298,8 +299,9 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
   };
 }
 
-export async function procurementStats(tenantId: string) {
+export async function procurementStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT COUNT(*) FILTER (WHERE status = 'draft')::int     AS draft,
            COUNT(*) FILTER (WHERE status = 'pending')::int    AS pending,
@@ -307,7 +309,7 @@ export async function procurementStats(tenantId: string) {
            COUNT(*) FILTER (WHERE status IN ('received','partially_received'))::int AS received,
            COALESCE(SUM(total_amount) FILTER (WHERE status = 'pending'), 0)::float  AS pending_value,
            COALESCE(SUM(total_amount) FILTER (WHERE status IN ('approved','partially_received','received')
-             AND order_date >= date_trunc('year', CURRENT_DATE)), 0)::float         AS committed_ytd
+             AND order_date >= ${cal.yearStart}::date), 0)::float         AS committed_ytd
       FROM purchase_orders WHERE tenant_id = ${tenantId}
   `;
   return rows[0] as {
@@ -321,8 +323,9 @@ export async function procurementStats(tenantId: string) {
 }
 
 /** Spend by vendor for the current year — the procurement concentration view. */
-export async function spendByVendor(tenantId: string, limit = 8) {
+export async function spendByVendor(tenantId: string, timeZone: string, limit = 8) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT v.company_name AS label,
            COALESCE(SUM(po.total_amount), 0)::float AS value
@@ -330,7 +333,7 @@ export async function spendByVendor(tenantId: string, limit = 8) {
       JOIN vendors v ON v.id = po.vendor_id
      WHERE po.tenant_id = ${tenantId}
        AND po.status IN ('approved','partially_received','received')
-       AND po.order_date >= date_trunc('year', CURRENT_DATE)
+       AND po.order_date >= ${cal.yearStart}::date
      GROUP BY v.company_name
      ORDER BY value DESC
      LIMIT ${limit}

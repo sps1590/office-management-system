@@ -9,7 +9,7 @@ import AutoForm from "@/components/forms/AutoForm";
 import FilterBar from "@/components/FilterBar";
 import { BarChart } from "@/components/charts";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
-import { compact, formatDate, num } from "@/lib/utils";
+import { addDays, compact, formatDate, isoDate, num } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Fleet" };
 
@@ -22,24 +22,27 @@ export default async function FleetPage({
   searchParams: Promise<{ q?: string; status?: string; type?: string }>;
 }) {
   const user = await requirePermission("fleet", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [vehicles, stats, drivers, costs] = await Promise.all([
     listVehicles(user.tenant_id, { q: sp.q, status: sp.status, type: sp.type }),
-    fleetStats(user.tenant_id),
+    fleetStats(user.tenant_id, tz),
     hasPermission(user, "fleet", "create") ? listDrivers(user.tenant_id) : [],
-    fleetCostTrend(user.tenant_id),
+    fleetCostTrend(user.tenant_id, tz),
   ]);
 
   const canCreate = hasPermission(user, "fleet", "create");
   const canEdit = hasPermission(user, "fleet", "edit");
   const currency = user.tenant.currency;
-  const tz = user.tenant.timezone;
 
-  // "Expiring" means within 30 days — the window in which renewal is actionable.
+  // "Expiring" means within 30 days — the window in which renewal is
+  // actionable. Expiry dates are calendar days, so they are compared as
+  // strings against the company's own today.
+  const today = isoDate(tz);
+  const renewBy = addDays(today, 30);
   const expiring = vehicles.filter((v) => {
-    const soon = (d: string | null) =>
-      d && new Date(d).getTime() < Date.now() + 30 * 86_400_000;
+    const soon = (d: string | null) => d !== null && d < renewBy;
     return soon(v.insurance_expiry) || soon(v.fitness_expiry) || soon(v.tax_token_expiry);
   });
 
@@ -149,10 +152,10 @@ export default async function FleetPage({
                         <td className="text-fg-muted">{v.driver_name ?? "—"}</td>
                         <td className="right">{num(v.current_odometer)} km</td>
                         <td>
-                          <ExpiryCell date={v.insurance_expiry} tz={tz} />
+                          <ExpiryCell date={v.insurance_expiry} tz={tz} today={today} renewBy={renewBy} />
                         </td>
                         <td>
-                          <ExpiryCell date={v.fitness_expiry} tz={tz} />
+                          <ExpiryCell date={v.fitness_expiry} tz={tz} today={today} renewBy={renewBy} />
                         </td>
                         <td>
                           <StatusBadge status={v.status} />
@@ -249,11 +252,20 @@ export default async function FleetPage({
   );
 }
 
-function ExpiryCell({ date, tz }: { date: string | null; tz: string }) {
+function ExpiryCell({
+  date,
+  tz,
+  today,
+  renewBy,
+}: {
+  date: string | null;
+  tz: string;
+  today: string;
+  renewBy: string;
+}) {
   if (!date) return <span className="text-fg-subtle">—</span>;
-  const time = new Date(date).getTime();
-  const expired = time < Date.now();
-  const soon = time < Date.now() + 30 * 86_400_000;
+  const expired = date < today;
+  const soon = date < renewBy;
   return (
     <span
       className={

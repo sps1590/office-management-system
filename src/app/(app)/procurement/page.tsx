@@ -20,11 +20,12 @@ export default async function ProcurementPage({
   searchParams: Promise<{ status?: string; vendor?: string }>;
 }) {
   const user = await requirePermission("procurement", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const [orders, stats, vendors, queue, settings] = await Promise.all([
     listPurchaseOrders(user.tenant_id, { status: sp.status, vendorId: sp.vendor }),
-    procurementStats(user.tenant_id),
+    procurementStats(user.tenant_id, tz),
     vendorOptions(user.tenant_id),
     listPurchaseOrders(user.tenant_id, { awaitingUserId: user.id }),
     getSettings(user.tenant_id),
@@ -32,7 +33,6 @@ export default async function ProcurementPage({
 
   const currency = user.tenant.currency;
 
-  const tz = user.tenant.timezone;
   const canCreate = hasPermission(user, "procurement", "create");
 
   return (

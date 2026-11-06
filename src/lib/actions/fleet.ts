@@ -591,7 +591,8 @@ export async function completeMaintenanceAction(
 
   await db`
     UPDATE vehicle_maintenance
-       SET status = 'completed', completed_date = CURRENT_DATE, cost = ${finalCost}
+       SET status = 'completed', completed_date = ${isoDate(user.tenant.timezone)}::date,
+           cost = ${finalCost}
      WHERE id = ${id} AND tenant_id = ${user.tenant_id}
   `;
   await db`

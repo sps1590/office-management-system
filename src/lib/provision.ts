@@ -1,6 +1,7 @@
 import "server-only";
 import { getDb } from "./db";
 import { TENANT_ROLE_TEMPLATES } from "./modules";
+import { addDays, isoDate } from "./utils";
 
 // Everything a brand-new company needs before its first login: its own
 // editable copy of the role matrix, a chart of accounts the auto-posting code
@@ -77,13 +78,18 @@ export async function provisionTenant(input: {
   timezone?: string;
 }): Promise<{ tenantId: string; userId: string }> {
   const db = await getDb();
+  // The company's own first day, not the database's: signing up at 01:00 in
+  // Dhaka must not record a joining date of yesterday.
+  const zone = input.timezone ?? "Asia/Dhaka";
+  const today = isoDate(zone);
+  const inThirtyDays = addDays(today, 30);
 
   const tenantRows = await db`
     INSERT INTO tenants (company_name, slug, status, plan_key, currency, timezone, country, phone, email, trial_ends_on)
     VALUES (${input.companyName}, ${input.slug}, 'trial', 'business',
-            ${input.currency ?? "BDT"}, ${input.timezone ?? "Asia/Dhaka"},
+            ${input.currency ?? "BDT"}, ${zone},
             ${input.country ?? null}, ${input.phone ?? null}, ${input.adminEmail},
-            CURRENT_DATE + 30)
+            ${inThirtyDays}::date)
     RETURNING id
   `;
   const tenantId = (tenantRows[0] as { id: string }).id;
@@ -96,7 +102,7 @@ export async function provisionTenant(input: {
 
   await db`
     INSERT INTO tenant_subscriptions (tenant_id, plan_key, status, renews_on, amount)
-    VALUES (${tenantId}, 'business', 'active', CURRENT_DATE + 30, 0)
+    VALUES (${tenantId}, 'business', 'active', ${inThirtyDays}::date, 0)
   `;
 
   // The tenant's own copy of the role matrix. Editing it later affects only
@@ -131,7 +137,7 @@ export async function provisionTenant(input: {
 
   await db`
     INSERT INTO employee_profiles (user_id, tenant_id, date_of_joining, employment_type)
-    VALUES (${userId}, ${tenantId}, CURRENT_DATE, 'permanent')
+    VALUES (${userId}, ${tenantId}, ${today}::date, 'permanent')
   `;
   await db`UPDATE departments SET head_user_id = ${userId}
            WHERE id = ${departmentId} AND tenant_id = ${tenantId}`;

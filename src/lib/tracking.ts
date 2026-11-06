@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { calendarBounds } from "./utils";
 import { simplifyRoute } from "./geo";
 
 export type LivePosition = {
@@ -123,14 +124,15 @@ export async function listGeofenceEvents(tenantId: string, limit = 40) {
   }[];
 }
 
-export async function listDevices(tenantId: string) {
+export async function listDevices(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const since = calendarBounds(timeZone).dayStartAt;
   const rows = await db`
     SELECT d.id, d.device_id, d.platform, d.model, d.mdm_enrolled, d.is_active,
            d.interval_seconds, d.last_seen_at, u.full_name,
            (SELECT COUNT(*)::int FROM location_logs l
              WHERE l.device_id = d.id
-               AND l.log_timestamp > now() - INTERVAL '24 hours') AS points_today
+               AND l.log_timestamp >= ${since}) AS points_today
       FROM device_registrations d
       JOIN users u ON u.id = d.user_id
      WHERE d.tenant_id = ${tenantId}
@@ -150,21 +152,22 @@ export async function listDevices(tenantId: string) {
   }[];
 }
 
-export async function trackingStats(tenantId: string) {
+export async function trackingStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const since = calendarBounds(timeZone).dayStartAt;
   const rows = await db`
     SELECT (SELECT COUNT(DISTINCT user_id)::int FROM location_logs
              WHERE tenant_id = ${tenantId}
                AND log_timestamp > now() - INTERVAL '15 minutes')          AS live_now,
            (SELECT COUNT(DISTINCT user_id)::int FROM location_logs
              WHERE tenant_id = ${tenantId}
-               AND log_timestamp > now() - INTERVAL '24 hours')            AS active_today,
+               AND log_timestamp >= ${since})                              AS active_today,
            (SELECT COUNT(*)::int FROM location_logs
              WHERE tenant_id = ${tenantId}
-               AND log_timestamp > now() - INTERVAL '24 hours')            AS points_today,
+               AND log_timestamp >= ${since})                              AS points_today,
            (SELECT COUNT(*)::int FROM geofence_events
              WHERE tenant_id = ${tenantId} AND event_type = 'deviation'
-               AND occurred_at > now() - INTERVAL '24 hours')              AS deviations_today,
+               AND occurred_at >= ${since})                                AS deviations_today,
            (SELECT COUNT(*)::int FROM device_registrations
              WHERE tenant_id = ${tenantId} AND is_active = TRUE)           AS devices,
            (SELECT COUNT(*)::int FROM device_registrations

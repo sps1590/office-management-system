@@ -1,7 +1,7 @@
 import "server-only";
 import { getDb } from "./db";
 import { getSettings } from "./settings";
-import { formatTime, instantToZoned, isoDate, zonedToInstant } from "./utils";
+import { addDays, calendarBounds, formatTime, instantToZoned, isoDate, zonedToInstant } from "./utils";
 
 /* --- rooms ---------------------------------------------------------------- */
 
@@ -81,13 +81,6 @@ export type FreeSlot = {
 
 const SEARCH_DAYS = 7;
 const MIN_SLOT_MINUTES = 15;
-
-/** Steps a YYYY-MM-DD string by whole days, where UTC has no short days. */
-function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 /** 0 = Sunday, the numbering `weekend_days` default [5, 6] was written for. */
 const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
@@ -291,14 +284,15 @@ export async function listAssets(
   }[];
 }
 
-export async function assetStats(tenantId: string) {
+export async function assetStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const soon = addDays(calendarBounds(timeZone).today, 60);
   const rows = await db`
     SELECT COUNT(*)::int                                          AS total,
            COUNT(*) FILTER (WHERE status = 'in_use')::int          AS in_use,
            COUNT(*) FILTER (WHERE status = 'under_repair')::int    AS under_repair,
            COUNT(*) FILTER (WHERE warranty_expiry IS NOT NULL
-                              AND warranty_expiry < CURRENT_DATE + 60)::int AS warranty_due,
+                              AND warranty_expiry < ${soon}::date)::int AS warranty_due,
            COALESCE(SUM(COALESCE(current_value, purchase_cost, 0)), 0)::float AS book_value
       FROM assets WHERE tenant_id = ${tenantId}
   `;
@@ -364,16 +358,17 @@ export async function listTasks(
   return rows as unknown as Task[];
 }
 
-export async function taskStats(tenantId: string, userId: string) {
+export async function taskStats(tenantId: string, userId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT COUNT(*) FILTER (WHERE status NOT IN ('done','cancelled'))::int AS open,
            COUNT(*) FILTER (WHERE status NOT IN ('done','cancelled')
-                              AND due_date < CURRENT_DATE)::int            AS overdue,
+                              AND due_date < ${cal.today}::date)::int     AS overdue,
            COUNT(*) FILTER (WHERE assigned_to = ${userId}
                               AND status NOT IN ('done','cancelled'))::int AS mine,
            COUNT(*) FILTER (WHERE status = 'done'
-                              AND completed_at >= date_trunc('week', CURRENT_DATE))::int AS done_this_week
+                              AND completed_at >= ${cal.weekStartAt})::int AS done_this_week
       FROM tasks WHERE tenant_id = ${tenantId}
   `;
   return rows[0] as { open: number; overdue: number; mine: number; done_this_week: number };

@@ -3,6 +3,89 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-06 — Counters now count the company's day, not the database's
+
+The previous entry fixed how a wall clock is stored and rendered, and left one
+thing behind: the aggregate queries that asked Postgres what day it is.
+`CURRENT_DATE` is the *database session's* day, which on Neon is UTC. So a
+Dhaka office read yesterday's figures until 06:00 and a Toronto one tomorrow's
+after 19:00. An invoice due today was already counted overdue; a deal won on
+the 1st landed in last month's total; "on leave today" named the wrong day for
+part of every day.
+
+### How the boundaries are decided now
+`calendarBounds(timeZone)` in `src/lib/utils.ts` returns the company's own
+`today`, `monthStart`, `yearStart` and `year` as calendar days, plus the
+instants at which its day, week, month and year began. A query comparing a
+DATE takes the calendar day; one comparing a TIMESTAMPTZ takes the instant.
+Both are computed once per request, so a page of twelve concurrent queries can
+no longer straddle midnight the way twelve separate `CURRENT_DATE` calls could.
+
+Twelve query functions gained the zone as an argument — `financeStats`,
+`cashFlowTrend`, `fleetStats`, `bookingStats`, `fleetCostTrend`, `leaveStats`,
+`crmStats`, `visitStats`, `assetStats`, `taskStats`, `procurementStats`,
+`spendByVendor` — along with `trackingStats` and `listDevices`. Required, not
+optional, so the compiler found all 29 call sites.
+
+### Bucketing, not just comparing
+`fleetCostTrend` buckets trip costs by month from a TIMESTAMPTZ, so *which*
+month a trip falls in depends on the zone: that one still truncates in SQL, now
+as `date_trunc('month', timezone($zone, t.started_at))`. The maintenance side
+reads a DATE and needs no conversion. A boundary comes from JS; bucketing a
+column stays in SQL.
+
+### Overdue in the browser, too
+Seven pages decided "overdue" in JavaScript with
+`new Date(row.due_date).getTime() < Date.now()` — a calendar day parsed as UTC
+midnight against the server's instant, which flagged a bill due today as
+overdue for several hours each morning. They compare `YYYY-MM-DD` strings
+against the company's today now, which is both correct and cheaper. It also
+cleared eight of the fourteen `react-hooks/purity` lint errors, since the
+comparison no longer calls `Date.now()` during render.
+
+### Dates written as "now"
+`completed_date`, `received_date`, `returned_on`, `assigned_on` and
+`recorded_on` were written as `CURRENT_DATE`, and provisioning set a new
+company's `trial_ends_on` and its admin's `date_of_joining` the same way.
+Registering at 01:00 in Dhaka recorded a joining date of the day before. All
+now take the company's day. `stock_movements` keeps `created_at`, an instant,
+and needed nothing — `npm run check:columns` caught an attempt to add a
+calendar day it does not have.
+
+### "Today" now means today
+`active_today`, `points_today` and `deviations_today` counted a rolling 24
+hours while the UI called them "today". On an operations board that is a
+different number: with one coordinate logged at 05:00Z and another at 20:00Z,
+the rolling window said two and the company's day said one. They count from
+the company's midnight now, and the two labels that honestly said "24h" were
+relabelled to match.
+
+### Verified
+Against a throwaway tenant on the real database, seeded with rows that
+straddle the boundary, read twice without changing a single row — once as
+America/Los_Angeles (where it was still 05 Nov) and once as Asia/Dhaka (where
+it was already the 6th):
+
+| Counter | Los Angeles | Dhaka |
+| --- | --- | --- |
+| Invoices overdue | BDT 500, one row flagged | BDT 1,500, two rows flagged |
+| Bills overdue | BDT 0 | BDT 700, row flagged |
+| Tasks overdue | 0 | 1 |
+| Vehicle documents expiring within 30 days | 0 | 1 |
+| Deals won this month | BDT 1K | BDT 10K |
+| On leave today | 1 | 0 |
+
+All 17 pages touched returned 200 in both zones. `npm run check` reports 345
+statements, every tenant-scoped query filtered and every column present; the
+build is clean and lint is down to 6 errors from 14, all pre-existing.
+
+### Known limitation
+Nothing date-shaped is left on the database's clock. The platform console
+(`/platform`) stays in UTC by design — it spans every tenant, so it cannot
+sort in mixed zones — and the genuinely rolling windows ("reporting now", "in
+the last 24 hours", session and rate-limit expiry) are durations from the
+present instant and carry no zone at all.
+
 ## 2026-11-06 — Every date and time is now the company's, not the server's
 
 The app had been telling every company the server's time. A booking typed as

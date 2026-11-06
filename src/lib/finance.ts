@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { calendarBounds } from "./utils";
 
 export type Invoice = {
   id: string;
@@ -137,18 +138,19 @@ export async function listExpenseClaims(
   return rows as unknown as ExpenseClaim[];
 }
 
-export async function financeStats(tenantId: string) {
+export async function financeStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const [ar, ap, exp, cash] = await Promise.all([
     db`
       SELECT COALESCE(SUM(total_amount - amount_paid), 0)::float AS outstanding,
-             COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE due_date < CURRENT_DATE), 0)::float AS overdue,
+             COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE due_date < ${cal.today}::date), 0)::float AS overdue,
              COUNT(*) FILTER (WHERE status NOT IN ('paid','void'))::int AS open_count
         FROM invoices WHERE tenant_id = ${tenantId} AND status NOT IN ('draft','void')
     `,
     db`
       SELECT COALESCE(SUM(total_amount - amount_paid), 0)::float AS outstanding,
-             COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE due_date < CURRENT_DATE), 0)::float AS overdue,
+             COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE due_date < ${cal.today}::date), 0)::float AS overdue,
              COUNT(*) FILTER (WHERE status NOT IN ('paid','void'))::int AS open_count
         FROM bills WHERE tenant_id = ${tenantId} AND status NOT IN ('draft','void')
     `,
@@ -156,7 +158,7 @@ export async function financeStats(tenantId: string) {
       SELECT COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
              COALESCE(SUM(amount) FILTER (WHERE status = 'pending'), 0)::float AS pending_amount,
              COALESCE(SUM(amount) FILTER (WHERE status = 'reimbursed'
-               AND expense_date >= date_trunc('year', CURRENT_DATE)), 0)::float AS reimbursed_ytd
+               AND expense_date >= ${cal.yearStart}::date), 0)::float AS reimbursed_ytd
         FROM expense_claims WHERE tenant_id = ${tenantId}
     `,
     db`
@@ -202,14 +204,15 @@ export async function listPayments(tenantId: string, limit = 40) {
 }
 
 /** Monthly inflow and outflow for the cash-flow chart. */
-export async function cashFlowTrend(tenantId: string, months = 6) {
+export async function cashFlowTrend(tenantId: string, timeZone: string, months = 6) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT to_char(m.month, 'Mon') AS label,
            COALESCE(SUM(p.amount) FILTER (WHERE p.direction = 'in'), 0)::float  AS inflow,
            COALESCE(SUM(p.amount) FILTER (WHERE p.direction = 'out'), 0)::float AS outflow
-      FROM generate_series(date_trunc('month', CURRENT_DATE) - make_interval(months => ${months - 1}),
-                           date_trunc('month', CURRENT_DATE), '1 month') AS m(month)
+      FROM generate_series(${cal.monthStart}::timestamp - make_interval(months => ${months - 1}),
+                           ${cal.monthStart}::timestamp, '1 month') AS m(month)
       LEFT JOIN payments p
              ON date_trunc('month', p.paid_on) = m.month AND p.tenant_id = ${tenantId}
      GROUP BY m.month

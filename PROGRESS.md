@@ -36,6 +36,17 @@ Last updated: **2026-11-06**
 110 files, 59 of 62 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
 
+### Verified against the live database, 2026-11-06
+
+Counters were read twice from one throwaway tenant seeded with rows that
+straddle a day boundary, without changing a row between reads: once with the
+company on `America/Los_Angeles`, where it was still 05 Nov, and once on
+`Asia/Dhaka`, where it was already the 6th. Overdue invoices went BDT 500 →
+1,500, overdue bills BDT 0 → 700, overdue tasks 0 → 1, vehicle documents
+expiring 0 → 1, deals won this month BDT 1K → 10K, and on-leave-today 1 → 0.
+All 17 pages touched returned 200 in both zones. The tenant was deleted
+afterwards; NMCP was not read or written.
+
 ### Verified against the live database, 2026-11-05
 
 The schema has now executed against real Postgres: **62 tables, 158 indexes,
@@ -154,7 +165,10 @@ That run surfaced the cross-region latency problem recorded under
   two-step approve-then-reimburse treatment, manual journal entry.
 - **Time**: every wall clock is stored and rendered through
   `tenants.timezone`, chosen from the IANA list in Settings and taken from the
-  browser at registration; DATE columns stay zone-free calendar days.
+  browser at registration; DATE columns stay zone-free calendar days. Every
+  counter that means "today", "this month" or "overdue" is measured against
+  the company's own calendar via `calendarBounds()`, not the database's UTC
+  day, and a date written as "now" is the company's day.
 - **Workplace**: meeting rooms whose overlap refusal names the clash and
   offers the room's next free windows as one-click alternatives, visitor register
   that notifies the host, asset register with chain-of-custody history,
@@ -216,14 +230,6 @@ That run surfaced the cross-region latency problem recorded under
   sequential writes that the HTTP driver cannot batch. Invisible in
   development, where the server is near the database. See the 2026-11-05
   changelog entry for the two ways to fix it; both are the owner's call.
-- **Date-based counters still use the database's UTC day.** Timezones are
-  otherwise fixed (2026-11-06): `tenants.timezone` now decides how every wall
-  clock is stored and rendered. What remains is the aggregate queries that
-  compare a DATE column against `CURRENT_DATE` — overdue invoices and bills,
-  "this month" totals, documents expiring within 30 days, on-leave-today.
-  Those can be a day out for the few hours each day when the company's date
-  and UTC's differ. Fixing them means threading the zone into about twenty
-  more query functions for a counter that drifts by one.
 - **The map has not been seen with data on it.** Leaflet renders its empty
   state correctly, but no device has reported a position through the UI, so
   markers, clustering and route playback are still only exercised by the

@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb } from "./db";
+import { addDays, calendarBounds } from "./utils";
 
 export type Vehicle = {
   id: string;
@@ -67,17 +68,18 @@ export async function listVehicles(
   return rows as unknown as Vehicle[];
 }
 
-export async function fleetStats(tenantId: string) {
+export async function fleetStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const soon = addDays(calendarBounds(timeZone).today, 30);
   const rows = await db`
     SELECT COUNT(*)::int                                            AS total,
            COUNT(*) FILTER (WHERE status = 'available')::int         AS available,
            COUNT(*) FILTER (WHERE status = 'in_use')::int            AS in_use,
            COUNT(*) FILTER (WHERE status = 'maintenance')::int       AS maintenance,
            COUNT(*) FILTER (WHERE insurance_expiry IS NOT NULL
-                              AND insurance_expiry < CURRENT_DATE + 30)::int AS insurance_due,
+                              AND insurance_expiry < ${soon}::date)::int AS insurance_due,
            COUNT(*) FILTER (WHERE fitness_expiry IS NOT NULL
-                              AND fitness_expiry < CURRENT_DATE + 30)::int   AS fitness_due,
+                              AND fitness_expiry < ${soon}::date)::int   AS fitness_due,
            COALESCE(SUM(current_odometer), 0)::int                   AS total_odometer
       FROM vehicles WHERE tenant_id = ${tenantId}
   `;
@@ -121,14 +123,15 @@ export async function listBookings(
   return rows as unknown as Booking[];
 }
 
-export async function bookingStats(tenantId: string) {
+export async function bookingStats(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT COUNT(*) FILTER (WHERE status = 'pending')::int      AS pending,
            COUNT(*) FILTER (WHERE status = 'approved')::int      AS approved,
            COUNT(*) FILTER (WHERE status = 'in_progress')::int   AS in_progress,
            COUNT(*) FILTER (WHERE status = 'completed'
-             AND start_time >= date_trunc('month', CURRENT_DATE))::int AS completed_this_month
+             AND start_time >= ${cal.monthStartAt})::int AS completed_this_month
       FROM vehicle_bookings WHERE tenant_id = ${tenantId}
   `;
   return rows[0] as {
@@ -171,23 +174,24 @@ export async function listMaintenance(tenantId: string, filters: { status?: stri
 }
 
 /** Monthly fuel and maintenance spend, for the fleet cost chart. */
-export async function fleetCostTrend(tenantId: string) {
+export async function fleetCostTrend(tenantId: string, timeZone: string) {
   const db = await getDb();
+  const cal = calendarBounds(timeZone);
   const rows = await db`
     SELECT to_char(m.month, 'Mon') AS label,
            COALESCE((
              SELECT SUM(t.fuel_cost + COALESCE(t.toll_cost,0) + COALESCE(t.other_cost,0))
                FROM trip_logs t
               WHERE t.tenant_id = ${tenantId}
-                AND date_trunc('month', t.started_at) = m.month
+                AND date_trunc('month', timezone(${timeZone}, t.started_at)) = m.month
            ), 0)::float AS trips,
            COALESCE((
              SELECT SUM(vm.cost) FROM vehicle_maintenance vm
               WHERE vm.tenant_id = ${tenantId}
                 AND date_trunc('month', vm.completed_date) = m.month
            ), 0)::float AS maintenance
-      FROM generate_series(date_trunc('month', CURRENT_DATE) - INTERVAL '5 months',
-                           date_trunc('month', CURRENT_DATE), '1 month') AS m(month)
+      FROM generate_series(${cal.monthStart}::timestamp - INTERVAL '5 months',
+                           ${cal.monthStart}::timestamp, '1 month') AS m(month)
      ORDER BY m.month
   `;
   return rows as unknown as { label: string; trips: number; maintenance: number }[];

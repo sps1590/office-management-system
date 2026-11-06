@@ -28,7 +28,7 @@ export default async function FieldVisitsPage({
       userId: seesAll ? undefined : user.id,
     }),
     listFieldVisits(user.tenant_id, { userId: user.id }),
-    visitStats(user.tenant_id),
+    visitStats(user.tenant_id, tz),
     clientOptions(user.tenant_id),
     listDeals(user.tenant_id, { status: "open" }),
     hasPermission(user, "field", "edit") ? pickableUsers(user.tenant_id) : [],

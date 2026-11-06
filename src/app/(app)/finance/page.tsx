@@ -18,8 +18,8 @@ export const metadata: Metadata = { title: "General ledger" };
 
 export default async function FinancePage() {
   const user = await requirePermission("finance", "view");
-  const currency = user.tenant.currency;
   const tz = user.tenant.timezone;
+  const currency = user.tenant.currency;
 
   const year = Number(isoDate(tz).slice(0, 4));
   const [balance, journal, accounts, pnl, stats, cash] = await Promise.all([
@@ -27,8 +27,8 @@ export default async function FinancePage() {
     recentJournal(user.tenant_id, 30),
     listAccounts(user.tenant_id),
     incomeStatement(user.tenant_id, `${year}-01-01`, isoDate(tz)),
-    financeStats(user.tenant_id),
-    cashFlowTrend(user.tenant_id, 6),
+    financeStats(user.tenant_id, tz),
+    cashFlowTrend(user.tenant_id, tz, 6),
   ]);
 
   const totalDebit = balance.reduce((s, a) => s + a.debit, 0);

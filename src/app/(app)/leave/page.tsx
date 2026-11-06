@@ -38,7 +38,7 @@ export default async function LeavePage({
     listLeaveTypes(user.tenant_id),
     leaveBalances(user.tenant_id, user.id, year),
     getSettings(user.tenant_id),
-    seesTeam ? leaveStats(user.tenant_id) : null,
+    seesTeam ? leaveStats(user.tenant_id, tz) : null,
     listLeaveRequests(user.tenant_id, { userId: user.id }),
     listLeaveRequests(user.tenant_id, { awaitingUserId: user.id }),
     seesTeam ? listLeaveRequests(user.tenant_id, { status: sp.status }) : [],

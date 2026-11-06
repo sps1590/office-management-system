@@ -23,19 +23,19 @@ export default async function BookingsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const user = await requirePermission("fleet", "view");
+  const tz = user.tenant.timezone;
   const sp = await searchParams;
 
   const seesAll = canSeeEveryone(user, "fleet");
   const canApprove = hasPermission(user, "fleet", "approve");
   const currency = user.tenant.currency;
-  const tz = user.tenant.timezone;
 
   const [bookings, stats, vehicles, drivers] = await Promise.all([
     listBookings(user.tenant_id, {
       status: sp.status,
       userId: seesAll ? undefined : user.id,
     }),
-    seesAll ? bookingStats(user.tenant_id) : null,
+    seesAll ? bookingStats(user.tenant_id, tz) : null,
     listVehicles(user.tenant_id),
     listDrivers(user.tenant_id),
   ]);

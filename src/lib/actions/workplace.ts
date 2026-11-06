@@ -5,7 +5,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
-import { zonedToSql } from "@/lib/utils";
+import { isoDate, zonedToSql } from "@/lib/utils";
 import { nextDocNumber } from "@/lib/sequence";
 import { findFreeSlots, slotLabel } from "@/lib/workplace";
 import { audit, notify } from "@/lib/audit";
@@ -364,8 +364,9 @@ export async function createAssetAction(
 
   if (d.assignedTo) {
     await db`
-      INSERT INTO asset_assignments (tenant_id, asset_id, user_id, note)
-      VALUES (${user.tenant_id}, ${assetId}, ${d.assignedTo}, 'Initial assignment')
+      INSERT INTO asset_assignments (tenant_id, asset_id, user_id, note, assigned_on)
+      VALUES (${user.tenant_id}, ${assetId}, ${d.assignedTo}, 'Initial assignment',
+              ${isoDate(user.tenant.timezone)}::date)
     `;
   }
 
@@ -413,7 +414,7 @@ export async function assignAssetAction(
   // history reads as a chain of custody rather than overlapping claims.
   if (asset.assigned_to && asset.assigned_to !== d.userId) {
     await db`
-      UPDATE asset_assignments SET returned_on = CURRENT_DATE
+      UPDATE asset_assignments SET returned_on = ${isoDate(user.tenant.timezone)}::date
        WHERE tenant_id = ${user.tenant_id} AND asset_id = ${d.assetId}
          AND user_id = ${asset.assigned_to} AND returned_on IS NULL
     `;
@@ -426,8 +427,9 @@ export async function assignAssetAction(
 
   if (d.userId && d.userId !== asset.assigned_to) {
     await db`
-      INSERT INTO asset_assignments (tenant_id, asset_id, user_id)
-      VALUES (${user.tenant_id}, ${d.assetId}, ${d.userId})
+      INSERT INTO asset_assignments (tenant_id, asset_id, user_id, assigned_on)
+      VALUES (${user.tenant_id}, ${d.assetId}, ${d.userId},
+              ${isoDate(user.tenant.timezone)}::date)
     `;
     await notify({
       tenantId: user.tenant_id,
