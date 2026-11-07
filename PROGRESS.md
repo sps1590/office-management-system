@@ -342,7 +342,7 @@ That run surfaced the cross-region latency problem recorded under
   the geofence circle and the live counters. Route playback and clustering at
   scale are still only exercised by the code behind them — one device on one
   short track is not a crowd.
-- **There is now a test suite, and what it does not cover is the risk.** 61
+- **There is now a test suite, and what it does not cover is the risk.** 73
   tests (`npm test`) run the real `src/lib` modules against a throwaway Neon
   branch — see [docs/TESTING.md](docs/TESTING.md). They pin the four defects
   of 2026-11-07, each confirmed by reverting its fix and watching the test go
