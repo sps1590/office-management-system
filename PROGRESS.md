@@ -67,8 +67,53 @@ came out of it, all fixed the same day: no response carried any security
 header (see [CHANGELOG.md](CHANGELOG.md)); the signup form's full-name
 placeholder was a real person's name; and — found by being locked out of
 NMCP while trying to sign in for the rest of the sweep — the product had no
-password reset of any kind. The signed-in half of the sweep still
-needs a session and has not been done from Chrome.
+password reset of any kind.
+
+### Swept in a browser, signed in, 2026-11-07
+
+The same deployment was then driven from Chrome as NMCP's company admin,
+read-only: nothing was created, changed or deleted in the tenant.
+
+All 34 static signed-in routes answer 200 with no error marker, between
+170 ms and 680 ms. An employee page and its edit form answer 200; an id that
+belongs to nobody answers 404, not 500, and discloses nothing.
+`/payroll/[id]` and `/procurement/[id]` are still unexercised because no
+payslip or purchase order exists yet to address. Eight protected routes
+answer 307 to `/login` with the cookie withheld, and the telemetry endpoints
+still answer 401 to an absent or unknown device token.
+
+The console stayed silent across every page — no errors, no warnings, no
+hydration mismatch. That silence was itself verified: a deliberate
+`console.log` was planted and read back, so an empty console means an empty
+console and not a detached reader. The only third-party host the browser
+contacts is `tile.openstreetmap.org`, and Nominatim when somebody searches
+for a place.
+
+The interactive leaves were exercised. Clicking the geofence map fills
+`centerLat` / `centerLng` with seven decimals under `step="any"`; the place
+search resolved "Banani, Dhaka" and recentred the map with its radius ring.
+The command palette opens on Ctrl+K and filters. The theme toggle cycles
+system → light → dark, and dark survives navigation with no flash, because
+the server renders it. Layout holds from 1294 px down to 375 px with no
+horizontal scroll anywhere: wide tables scroll inside `.table-wrap` instead
+of breaking the page. List filters, empty states and a `' OR 1=1--` search
+term all behave — the last returns nothing, because the tagged template
+parameterised it.
+
+The headers added earlier the same day are live, confirmed on production:
+`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
+`nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, the
+`Permissions-Policy` allow-list, HSTS for two years with `preload`, and no
+`X-Powered-By`. `x-vercel-id: bom1::sin1::…` confirms the function still runs
+in Singapore beside the database. A dashboard load is 49 ms to first byte and
+591 ms to `load`, transferring 14 KB.
+
+One finding, unfixed and awaiting a decision: `/me` headlines **"Leave
+remaining 146.0"**, which sums every leave type — and 112 of those days are
+maternity leave. The number is honest (its own caption says "across 5 leave
+types") but it is not the number anybody means when they ask how much leave
+they have left, and it will read the same way for every employee in the
+company.
 
 ### Verified against the live database, 2026-11-06
 
