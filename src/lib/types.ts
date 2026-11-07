@@ -111,3 +111,31 @@ export type ImportState = {
   credentials?: { name: string; email: string; password: string }[];
   summary?: string;
 } | null;
+
+/**
+ * One leave request as the month calendar needs it: who, which category, and
+ * the span it covers, with everything the detail popover shows already
+ * joined on. It lives here rather than in `leave.ts` because the calendar is
+ * a client component and `leave.ts` is server-only.
+ */
+export type LeaveCalendarEntry = {
+  id: string;
+  user_id: string;
+  full_name: string;
+  avatar_url: string | null;
+  employee_code: string | null;
+  designation: string | null;
+  department: string | null;
+  leave_type: string;
+  color: string;
+  is_paid: boolean;
+  /** Inclusive calendar days, as YYYY-MM-DD. */
+  start_date: string;
+  end_date: string;
+  days: number;
+  reason: string | null;
+  status: string;
+  current_stage: number;
+  total_stages: number;
+  awaiting_name: string | null;
+};

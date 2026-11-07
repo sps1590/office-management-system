@@ -3,6 +3,83 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-08 — A leave calendar with faces on it
+
+`/leave` listed requests. It could not answer the question the screen is
+actually opened for: *who is away on the 12th?* Reading that off a list means
+doing date arithmetic in your head, once per row. The page now draws the
+month.
+
+### The calendar
+
+A grid of the company's own month — Sunday-first here, because
+`weekend_days` is Friday and Saturday — with the face of every person whose
+leave covers each day. Clicking a face opens the detail; clicking the day
+number, or the `+n` when a cell overflows, opens that day's whole roster, and
+one more click goes from there to a person.
+
+Decisions worth recording:
+
+- **A multi-day leave is expanded in the browser, not in SQL.** The query
+  returns one row per request and the grid repeats the face across the span,
+  so a fortnight off costs one row on the wire rather than fourteen.
+- **The overlap test is `start <= to AND end >= from`.** The containment test
+  that looks right — `start_date BETWEEN from AND to` — silently drops every
+  leave that began last month and runs into this one, which are exactly the
+  absences somebody looking at the 1st needs to see. It has its own test, and
+  that test has been watched to fail.
+- **Pending requests are drawn, faded with an amber dot.** An approver has to
+  see the clash before deciding, not after. Rejected and cancelled requests
+  are nobody's absence and never appear — drawing them would have somebody
+  arranging cover for a person who is at their desk.
+- **The ring around each face is the leave category's own colour**, which is
+  the only thing that tells annual from sick at a glance in a 22-pixel circle.
+  Faces fall back to initials, as everywhere else: `users.avatar_url` is
+  nullable and most companies never fill it.
+- **The week starts on the company's first working day**, computed from
+  `weekend_days` rather than fixed or read from a locale, so the weekend lands
+  at the end of each row where people look for it. Scattered rest days have no
+  single right answer and fall back to Sunday.
+- **The detail costs no second round trip.** Everything the popover shows —
+  department, designation, employee code, category, reason, approval stage —
+  is joined on by the one calendar query.
+- **A native `<dialog>`.** Esc, focus trapping and the backdrop come from the
+  browser; the alternative was a focus-management dependency for one popover.
+- **Public holidays are drawn too**, from the `holidays` table. A calendar
+  that hides them invites somebody to approve cover for a day the office is
+  shut.
+
+### On leave today
+
+A short table above the calendar: how many people are away right now, which
+departments carry the gap, and the first day each person is back — not the
+last day off, which is the question a cover rota never asks. Its own query
+rather than a filter over the calendar's, so paging back to August does not
+change what "today" means.
+
+### Fixed along the way
+
+- **`* { border-color: var(--border) }` in `globals.css` was unlayered**, and
+  unlayered CSS beats every `@layer` whatever the specificity. One line
+  written to replace the browser's `currentColor` default was quietly
+  overriding every `border-<colour>` utility in the application — including
+  `peer-checked:border-primary` on the working-day toggles added yesterday.
+  Moved into `@layer base`. Three class sites change, all toward what their
+  author wrote.
+- **A modal `<dialog>` opened in the top-left corner.** The browser centres
+  one with `margin: auto`, which Tailwind's preflight resets to `0`.
+
+### Also
+
+- `monthWindow()` in `utils.ts` now does the `?month=YYYY-MM` arithmetic that
+  `/me` had inline — the fallback for a malformed parameter, the last day of
+  the month derived rather than looked up, and the step across December. Both
+  screens use it; `/me` still refuses to page into the future, because a
+  timesheet of next month is a page of blanks, while a leave calendar's whole
+  point is the future.
+- Tests: 136 in 13 files, up from 119 in 12. Eight guards reverted and
+  watched to fail; see [docs/TESTING.md](docs/TESTING.md).
+
 ## 2026-11-07 — Bulk import, working patterns and a real timesheet
 
 Three things that a company onboarding its staff needs on day one: a way to

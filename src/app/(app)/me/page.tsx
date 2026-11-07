@@ -12,7 +12,7 @@ import { DAY_NAMES, shiftMinutes, workDaysLabel } from "@/lib/work-pattern";
 import { changePasswordAction } from "@/lib/actions/employees";
 import AutoForm from "@/components/forms/AutoForm";
 import { Avatar, Card, Field, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
-import { addDays, cn, duration, formatDate, isoDate, money, monthName, num } from "@/lib/utils";
+import { cn, duration, formatDate, isoDate, money, monthName, monthWindow, num } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My profile" };
 
@@ -33,13 +33,8 @@ export default async function MyProfilePage({
      with the month somebody is actually being paid for. `?month=YYYY-MM`
      looks back; anything else falls to the current one.
   */
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? "") ? (sp.month as string) : today.slice(0, 7);
-  const from = `${month}-01`;
-  // The 1st of next month, minus a day. Derived rather than looked up in a
-  // table of month lengths, so February and leap years need no special case.
-  const [my, mm] = month.split("-").map(Number);
-  const nextMonth = mm === 12 ? `${my + 1}-01-01` : `${my}-${String(mm + 1).padStart(2, "0")}-01`;
-  const to = addDays(nextMonth, -1);
+  const win = monthWindow(sp.month, today.slice(0, 7));
+  const { month, from, to, year: my, monthNumber: mm } = win;
 
   const settings = await getSettings(user.tenant_id);
   const shift = await shiftForUser(user.tenant_id, user.id);
@@ -61,15 +56,10 @@ export default async function MyProfilePage({
     : workDaysLabel([0, 1, 2, 3, 4, 5, 6].filter((d) => !(settings.weekend_days ?? []).includes(d)));
   const startsAt = (shift?.start_time ?? settings.work_start_time).slice(0, 5);
   // Month navigation: one step back is always offered, one step forward only
-  // when there is a month to go forward to.
-  const step = (n: number) => {
-    const m = mm + n;
-    const y = my + Math.floor((m - 1) / 12);
-    const wrapped = ((m - 1) % 12 + 12) % 12 + 1;
-    return `${y}-${String(wrapped).padStart(2, "0")}`;
-  };
-  const earlier = step(-1);
-  const later = month < today.slice(0, 7) ? step(1) : null;
+  // when there is a month to go forward to. A timesheet of next month is a
+  // page of blanks, unlike a leave calendar, where the future is the point.
+  const earlier = win.earlier;
+  const later = month < today.slice(0, 7) ? win.later : null;
 
   return (
     <>

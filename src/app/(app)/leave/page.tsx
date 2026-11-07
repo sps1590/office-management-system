@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
-import { CalendarDays, Check, CircleSlash, Plus, X } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, CircleSlash, Plus, Users, X } from "lucide-react";
 import { canSeeEveryone, hasPermission, requirePermission } from "@/lib/permissions";
 import {
+  holidaysBetween,
   leaveBalances,
+  leaveCalendar,
   leaveStats,
   listLeaveRequests,
   listLeaveTypes,
+  onLeaveToday,
 } from "@/lib/leave";
 import { getSettings } from "@/lib/settings";
+import { weekStartDay } from "@/lib/work-pattern";
+import LeaveCalendar from "@/components/LeaveCalendar";
 import {
   cancelLeaveAction,
   createLeaveTypeAction,
@@ -20,34 +26,71 @@ import AutoForm from "@/components/forms/AutoForm";
 import CsvImport from "@/components/forms/CsvImport";
 import FilterBar from "@/components/FilterBar";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
-import { formatDate, isoDate, num, titleCase } from "@/lib/utils";
+import { addDays, formatDate, isoDate, monthName, monthWindow, num, titleCase } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Leave" };
 
 export default async function LeavePage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; month?: string }>;
 }) {
   const user = await requirePermission("leave", "view");
   const tz = user.tenant.timezone;
   const sp = await searchParams;
-  const year = Number(isoDate(tz).slice(0, 4));
+  const today = isoDate(tz);
+  const year = Number(today.slice(0, 4));
 
   const seesTeam = canSeeEveryone(user, "leave");
+  /*
+     The calendar is company-wide, so it sits behind the same boundary as the
+     "All leave requests" table: an ordinary employee sees their own requests
+     and nobody else's. Who is on *sick* leave is not a fact to publish to
+     every colleague by default.
+  */
+  const win = monthWindow(sp.month, today.slice(0, 7));
 
-  const [types, balances, settings, stats, mine, queue, all] = await Promise.all([
-    listLeaveTypes(user.tenant_id),
-    leaveBalances(user.tenant_id, user.id, year),
-    getSettings(user.tenant_id),
-    seesTeam ? leaveStats(user.tenant_id, tz) : null,
-    listLeaveRequests(user.tenant_id, { userId: user.id }),
-    listLeaveRequests(user.tenant_id, { awaitingUserId: user.id }),
-    seesTeam ? listLeaveRequests(user.tenant_id, { status: sp.status }) : [],
-  ]);
+  const [types, balances, settings, stats, mine, queue, all, calendar, awayToday, holidays] =
+    await Promise.all([
+      listLeaveTypes(user.tenant_id),
+      leaveBalances(user.tenant_id, user.id, year),
+      getSettings(user.tenant_id),
+      seesTeam ? leaveStats(user.tenant_id, tz) : null,
+      listLeaveRequests(user.tenant_id, { userId: user.id }),
+      listLeaveRequests(user.tenant_id, { awaitingUserId: user.id }),
+      seesTeam ? listLeaveRequests(user.tenant_id, { status: sp.status }) : [],
+      seesTeam ? leaveCalendar(user.tenant_id, win.from, win.to) : [],
+      seesTeam ? onLeaveToday(user.tenant_id, today) : [],
+      seesTeam ? holidaysBetween(user.tenant_id, win.from, win.to) : [],
+    ]);
 
   const activeTypes = types.filter((t) => t.is_active);
   const chainLabel = settings.leave_approval_stages.map(titleCase).join(" → ");
+
+  // Both links have to carry the other's parameter, or paging the calendar
+  // would silently clear the status filter and vice versa.
+  const hrefFor = (next: { month?: string; status?: string }) => {
+    const p = new URLSearchParams();
+    const month = next.month ?? win.month;
+    const status = next.status ?? sp.status;
+    if (month !== today.slice(0, 7)) p.set("month", month);
+    if (status) p.set("status", status);
+    const q = p.toString();
+    return q ? `/leave?${q}` : "/leave";
+  };
+
+  /*
+     Today's absences grouped by the department that has to cover them. A
+     reduce rather than a GROUP BY because the rows are already here for the
+     table below — a second query to count what is in front of us would be
+     the more wasteful of the two.
+  */
+  const byDepartment = [...
+    awayToday.reduce((m, e) => {
+      const key = e.department ?? "No department";
+      return m.set(key, (m.get(key) ?? 0) + 1);
+    }, new Map<string, number>()),
+  ].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
   return (
     <>
@@ -136,6 +179,144 @@ export default async function LeavePage({
             </Card>
           )}
 
+          {seesTeam && (
+            <Card
+              title="On leave today"
+              bodyClassName="p-0"
+              action={
+                <span className="text-sm text-fg-muted">
+                  {formatDate(today, tz)}
+                </span>
+              }
+            >
+              {awayToday.length === 0 ? (
+                <EmptyState
+                  icon={<Users size={20} />}
+                  title="Everybody is in"
+                  description="No approved leave covers today."
+                />
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3.5 border-b border-border bg-surface-2">
+                    <span className="text-sm">
+                      <strong className="tnum text-base">{awayToday.length}</strong>{" "}
+                      {awayToday.length === 1 ? "person" : "people"} away across{" "}
+                      <strong className="tnum">{byDepartment.length}</strong>{" "}
+                      {byDepartment.length === 1 ? "department" : "departments"}
+                    </span>
+                    <span className="flex flex-wrap gap-1.5">
+                      {byDepartment.map(([dept, count]) => (
+                        <span key={dept} className="badge badge-neutral">
+                          {dept} · {count}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                  <div className="table-wrap">
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>Employee</th>
+                          <th>Department</th>
+                          <th>Leave type</th>
+                          <th>Back on</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {awayToday.map((e) => (
+                          <tr key={e.id}>
+                            <td>
+                              <span className="flex items-center gap-2.5">
+                                <Avatar name={e.full_name} url={e.avatar_url} size={28} />
+                                <span className="min-w-0">
+                                  <span className="block font-medium truncate">
+                                    {e.full_name}
+                                  </span>
+                                  {e.designation && (
+                                    <span className="block text-xs text-fg-subtle truncate">
+                                      {e.designation}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </td>
+                            <td className="text-fg-muted">{e.department ?? "—"}</td>
+                            <td>
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-sm shrink-0"
+                                  style={{ background: e.color }}
+                                />
+                                {e.leave_type}
+                              </span>
+                            </td>
+                            {/* The first day back, not the last day off: the
+                                question a cover rota actually asks. */}
+                            <td className="text-fg-muted">
+                              {formatDate(addDays(e.end_date, 1), tz)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
+
+          {seesTeam && (
+            <Card
+              title="Leave calendar"
+              action={
+                win.month !== today.slice(0, 7) ? (
+                  <Link href={hrefFor({ month: today.slice(0, 7) })} className="btn btn-ghost btn-sm">
+                    Back to today
+                  </Link>
+                ) : null
+              }
+            >
+              {/* The month and its arrows sit in the body rather than the card
+                  head, and the arrows carry no month name: this column is
+                  narrow at every width, and a head holding all three wrapped
+                  the title across three lines. The month each arrow leads to
+                  is in its label, where a screen reader and a tooltip find
+                  it. */}
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <Link
+                  href={hrefFor({ month: win.earlier })}
+                  className="btn btn-ghost btn-icon"
+                  title={`${monthName(Number(win.earlier.slice(5)))} ${win.earlier.slice(0, 4)}`}
+                  aria-label={`Previous month, ${monthName(Number(win.earlier.slice(5)))} ${win.earlier.slice(0, 4)}`}
+                >
+                  <ChevronLeft size={16} />
+                </Link>
+                <h3 className="font-semibold tracking-tight">
+                  {monthName(win.monthNumber)} {win.year}
+                </h3>
+                <Link
+                  href={hrefFor({ month: win.later })}
+                  className="btn btn-ghost btn-icon"
+                  title={`${monthName(Number(win.later.slice(5)))} ${win.later.slice(0, 4)}`}
+                  aria-label={`Next month, ${monthName(Number(win.later.slice(5)))} ${win.later.slice(0, 4)}`}
+                >
+                  <ChevronRight size={16} />
+                </Link>
+              </div>
+              <LeaveCalendar
+                entries={calendar}
+                from={win.from}
+                to={win.to}
+                today={today}
+                weekStart={weekStartDay(settings.weekend_days)}
+                weekendDays={settings.weekend_days ?? []}
+                holidays={holidays}
+                timeZone={tz}
+                canOpenProfile={hasPermission(user, "employees", "view")}
+              />
+            </Card>
+          )}
+
           <Card title="My requests" bodyClassName="p-0">
             {mine.length === 0 ? (
               <EmptyState
@@ -207,7 +388,12 @@ export default async function LeavePage({
                     })),
                   },
                 ]}
-              />
+              >
+                {/* A GET form posts only its own fields, so the month the
+                    calendar is showing has to ride along or applying a status
+                    filter would snap the calendar back to today. */}
+                <input type="hidden" name="month" value={win.month} />
+              </FilterBar>
               {all.length === 0 ? (
                 <EmptyState icon={<CalendarDays size={20} />} title="Nothing to show" />
               ) : (

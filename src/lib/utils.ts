@@ -216,6 +216,50 @@ export function dayStart(day: string, timeZone: string): string {
   return zonedToInstant(`${day}T00:00`, timeZone).toISOString();
 }
 
+export type MonthWindow = {
+  /** The month itself, as YYYY-MM. */
+  month: string;
+  year: number;
+  /** 1-12, for monthName(). */
+  monthNumber: number;
+  /** The first and last calendar day of the month, for a DATE comparison. */
+  from: string;
+  to: string;
+  /** The neighbouring months, as YYYY-MM, for navigation links. */
+  earlier: string;
+  later: string;
+};
+
+/**
+ * A `?month=YYYY-MM` parameter turned into a query window.
+ *
+ * Anything malformed falls back to `fallback` — a URL is user input, and a
+ * month of "13" or "../.." must not reach a date constructor. The last day is
+ * derived as the 1st of the next month minus one, so February and leap years
+ * need no table of month lengths, and stepping across December carries the
+ * year with it.
+ */
+export function monthWindow(requested: string | undefined, fallback: string): MonthWindow {
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requested ?? "") ? (requested as string) : fallback;
+  const year = Number(month.slice(0, 4));
+  const monthNumber = Number(month.slice(5, 7));
+  const step = (n: number) => {
+    const m = monthNumber + n;
+    const y = year + Math.floor((m - 1) / 12);
+    const wrapped = (((m - 1) % 12) + 12) % 12 + 1;
+    return `${y}-${String(wrapped).padStart(2, "0")}`;
+  };
+  return {
+    month,
+    year,
+    monthNumber,
+    from: `${month}-01`,
+    to: addDays(`${step(1)}-01`, -1),
+    earlier: step(-1),
+    later: step(1),
+  };
+}
+
 export type CalendarBounds = {
   /** The company's current calendar day, for comparing a DATE column. */
   today: string;

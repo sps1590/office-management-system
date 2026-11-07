@@ -115,3 +115,20 @@ export function workDaysLabel(days: number[]): string {
   }
   return sorted.map((d) => DAY_NAMES[d].slice(0, 3)).join(", ");
 }
+
+/**
+ * The weekday a calendar grid should begin on, 0 = Sunday.
+ *
+ * Not a constant and not a locale lookup: it is the company's own first
+ * working day, so the weekend lands at the end of each row where people look
+ * for it. A Friday/Saturday weekend gives a Sunday-start month; a
+ * Saturday/Sunday one gives Monday. When the rest days are scattered rather
+ * than a block — Tuesdays and Fridays off, say — there is no single answer,
+ * and Sunday is as good as any.
+ */
+export function weekStartDay(weekendDays: number[] | null | undefined): number {
+  const rest = new Set(weekendDays ?? []);
+  if (rest.size === 0 || rest.size >= 7) return 0;
+  const starts = [0, 1, 2, 3, 4, 5, 6].filter((d) => !rest.has(d) && rest.has((d + 6) % 7));
+  return starts.length === 1 ? starts[0] : 0;
+}

@@ -1,6 +1,7 @@
 import "server-only";
 import { getDb } from "./db";
 import { calendarBounds } from "./utils";
+import type { LeaveCalendarEntry } from "./types";
 
 export type LeaveRequestRow = {
   id: string;
@@ -154,4 +155,107 @@ export async function leaveStats(tenantId: string, timeZone: string) {
     approved_this_year: number;
     days_this_year: number;
   };
+}
+
+/*
+   LeaveCalendarEntry itself lives in types.ts, not here: the calendar that
+   renders it is a client component, and a type imported from a module that
+   begins `import "server-only"` is a build error waiting for the first person
+   who forgets the `type` keyword.
+*/
+export type { LeaveCalendarEntry } from "./types";
+
+/**
+ * Every leave that touches the window, for the month calendar.
+ *
+ * The predicate is an overlap test, not a containment one: a leave that began
+ * in October and runs to the 4th of November belongs on November's calendar,
+ * and `start_date BETWEEN from AND to` would silently drop exactly the
+ * absences a planner most needs to see.
+ *
+ * Pending requests come back alongside approved ones, drawn differently, so
+ * an approver can see the clash before they decide rather than after.
+ * Rejected and cancelled requests are nobody's absence and are left out.
+ */
+export async function leaveCalendar(
+  tenantId: string,
+  from: string,
+  to: string
+): Promise<LeaveCalendarEntry[]> {
+  const db = await getDb();
+  const rows = await db`
+    SELECT lr.id, lr.user_id, lr.start_date, lr.end_date, lr.days::float AS days,
+           lr.reason, lr.status, lr.current_stage, lr.total_stages,
+           u.full_name, u.avatar_url, u.employee_code, u.designation,
+           d.name AS department,
+           lt.name AS leave_type, lt.color, lt.is_paid,
+           aw.full_name AS awaiting_name
+      FROM leave_requests lr
+      JOIN users u        ON u.id = lr.user_id
+      JOIN leave_types lt ON lt.id = lr.leave_type_id
+      LEFT JOIN departments d ON d.id = u.department_id
+      LEFT JOIN leave_approvals la
+             ON la.leave_request_id = lr.id AND la.stage = lr.current_stage
+            AND lr.status = 'pending'
+      LEFT JOIN users aw ON aw.id = la.approver_id
+     WHERE lr.tenant_id = ${tenantId}
+       AND lr.status IN ('approved', 'pending')
+       AND lr.start_date <= ${to}::date
+       AND lr.end_date   >= ${from}::date
+     ORDER BY lr.start_date, u.full_name
+     LIMIT 500
+  `;
+  return rows as unknown as LeaveCalendarEntry[];
+}
+
+/**
+ * Who is actually away right now, with the department each absence is felt in.
+ *
+ * Its own query rather than a filter over `leaveCalendar`, because "today" must
+ * not move when somebody pages the calendar back to August. Approved only:
+ * a pending request is not yet an absence anyone can plan cover around.
+ */
+export async function onLeaveToday(
+  tenantId: string,
+  today: string
+): Promise<LeaveCalendarEntry[]> {
+  const db = await getDb();
+  const rows = await db`
+    SELECT lr.id, lr.user_id, lr.start_date, lr.end_date, lr.days::float AS days,
+           lr.reason, lr.status, lr.current_stage, lr.total_stages,
+           u.full_name, u.avatar_url, u.employee_code, u.designation,
+           d.name AS department,
+           lt.name AS leave_type, lt.color, lt.is_paid,
+           NULL::text AS awaiting_name
+      FROM leave_requests lr
+      JOIN users u        ON u.id = lr.user_id
+      JOIN leave_types lt ON lt.id = lr.leave_type_id
+      LEFT JOIN departments d ON d.id = u.department_id
+     WHERE lr.tenant_id = ${tenantId}
+       AND lr.status = 'approved'
+       AND lr.start_date <= ${today}::date
+       AND lr.end_date   >= ${today}::date
+     ORDER BY d.name NULLS LAST, u.full_name
+  `;
+  return rows as unknown as LeaveCalendarEntry[];
+}
+
+/**
+ * The company's public holidays inside a window.
+ *
+ * A leave calendar that does not show them invites somebody to approve cover
+ * for a day the office is shut. `attendance.ts` reads the same table inside
+ * its own parallel batch, where it is one of three queries that must fire
+ * together.
+ */
+export async function holidaysBetween(tenantId: string, from: string, to: string) {
+  const db = await getDb();
+  const rows = await db`
+    SELECT holiday_date, name
+      FROM holidays
+     WHERE tenant_id = ${tenantId}
+       AND holiday_date BETWEEN ${from}::date AND ${to}::date
+     ORDER BY holiday_date
+  `;
+  return rows as unknown as { holiday_date: string; name: string }[];
 }

@@ -33,12 +33,12 @@ Last updated: **2026-11-07**
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
-| 10 | Automated tests | **Started 2026-11-07** — 119 tests, the known defects, three invariants, bulk import and the timesheet; most of the product still uncovered |
+| 10 | Automated tests | **Started 2026-11-07** — 136 tests, the known defects, three invariants, bulk import, the timesheet and the leave calendar; most of the product still uncovered |
 
-`npm run build` is clean. `npm run check` reports **351 SQL statements across
-111 files, 59 of 63 tables tenant-scoped, every tenant-scoped query filtering
+`npm run build` is clean. `npm run check` reports **387 SQL statements across
+122 files, 60 of 64 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
-`npm test` runs **119 tests in 12 files** against a throwaway Neon branch, green
+`npm test` runs **136 tests in 13 files** against a throwaway Neon branch, green
 in ~50 s. `npm run verify` is both, and is the command to run before a commit.
 
 ### Exercised on the running product, 2026-11-07
@@ -248,6 +248,17 @@ That run surfaced the cross-region latency problem recorded under
   bad rows by the spreadsheet's own line number and write the good ones
   anyway. New accounts' temporary passwords are shown once and downloadable
   as a CSV, never stored in readable form.
+- **Leave calendar** (added 2026-11-08): `/leave` draws the month with the
+  face of every person whose leave covers each day — initials where there is
+  no photo, a ring in the leave category's colour, pending requests faded
+  with an amber dot. Clicking a face opens the detail (department,
+  designation, code, category, span, reason, approval stage) with no second
+  query; clicking a day number opens that day's whole roster. Public holidays
+  and the company's rest days are drawn, and the grid starts on the company's
+  own first working day. Above it, a short table of who is away *today*, how
+  many departments carry the gap, and the first day each person is back. The
+  whole section sits behind the same permission as "All leave requests", so
+  an ordinary employee still sees only their own.
 - **Fleet**: registry with document-expiry warnings, requisition workflow
   (request → approve → start → close with odometer and fuel), maintenance
   schedule, running-cost chart. Trip closure updates the odometer and posts
@@ -296,7 +307,7 @@ That run surfaced the cross-region latency problem recorded under
   validation, alerts, spacing and pending states cannot drift between modules.
 
 **Tests** — [docs/TESTING.md](docs/TESTING.md)
-- 119 `vitest` tests in 12 files running the real `src/lib` modules against a
+- 136 `vitest` tests in 13 files running the real `src/lib` modules against a
   throwaway Neon branch. Nothing in `src/` is mocked; no database call is
   faked. Five request-scoped modules are stubbed because they cannot exist
   outside a request, and the reason for each is at the top of
@@ -364,7 +375,7 @@ That run surfaced the cross-region latency problem recorded under
   the geofence circle and the live counters. Route playback and clustering at
   scale are still only exercised by the code behind them — one device on one
   short track is not a crowd.
-- **There is now a test suite, and what it does not cover is the risk.** 119
+- **There is now a test suite, and what it does not cover is the risk.** 136
   tests (`npm test`) run the real `src/lib` modules against a throwaway Neon
   branch — see [docs/TESTING.md](docs/TESTING.md). They pin the four defects
   of 2026-11-07, each confirmed by reverting its fix and watching the test go

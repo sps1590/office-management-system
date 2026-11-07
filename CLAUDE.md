@@ -61,6 +61,20 @@ drift stale.
   instant falls in depends on the zone. A rolling window (`now() - INTERVAL
   '15 minutes'`) is a duration and needs no zone — but then do not label it
   "today".
+- **A date range is matched by overlap, never by containment.** Anything
+  asking "what falls inside this window" — a leave on a calendar, a booking
+  in a day — reads `start <= ${to} AND end >= ${from}`. The containment test
+  `start BETWEEN from AND to` looks right and silently drops every record
+  that began before the window and runs into it, which are usually the ones
+  that matter most. `?month=YYYY-MM` windows come from `monthWindow()`, which
+  validates the parameter and derives the last day rather than assuming 30.
+- **A base-layer reset belongs in `@layer base`.** Unlayered CSS beats every
+  `@layer` whatever the specificity, so a bare `* { border-color: … }` in
+  `globals.css` silently disables every `border-<colour>` utility in the
+  application — which it did, unnoticed, until 2026-11-08. A modal is a
+  native `<dialog class="sheet">`: Esc, focus trapping and the backdrop come
+  free, and it needs `margin: auto`, because Tailwind's preflight resets the
+  margin the browser centres it with.
 - **A refusal that knows the way out offers it.** When an action can compute
   the alternative it is refusing in favour of — the next free window for a
   double-booked room — it returns `suggestions: [{ label, values }]` and
