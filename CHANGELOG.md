@@ -3,6 +3,74 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-08 — Forgotten passwords, and the first outbound email
+
+Until now, somebody who forgot their password had to find a company admin
+with a free hand. Sign-in has a **Forgot password?** link, and the reset
+arrives by email.
+
+### What happens
+
+`/forgot-password` takes an address and always answers the same thing. A
+link lands in the mailbox, `/reset-password?token=…` takes a new password,
+and the person is sent back to sign in with it — not signed in
+automatically, because opening the link proves they can read the mailbox,
+not that they know the password they just set.
+
+The properties that make a bearer link safe, each with a test that has been
+watched to fail:
+
+- **Only the SHA-256 of the token is stored**, the way device tokens are. A
+  copy of `password_resets` opens nothing.
+- **32 bytes from `node:crypto`**, never `Math.random()`.
+- **One use.** The check and the burn are one `UPDATE … WHERE used_at IS
+  NULL … RETURNING`, so two browsers racing the same link cannot both win.
+- **An hour's life**, and **issuing a new link kills the previous one** —
+  asking twice is usually somebody who never got the first, which may be in
+  a mailbox they have lost.
+- **Looking does not spend it.** The page's check is read-only, or a mail
+  client that pre-fetches links would kill every reset on arrival.
+- **A refusal does not spend it either.** Validation runs before the token
+  is touched, so one mistyped confirmation does not send somebody back to
+  their inbox.
+- **Spending it ends that person's other sessions**, for the same reason the
+  admin reset does: the other cause of a reset is that somebody else has the
+  account.
+- **The answer never varies with whether the address exists.** A form that
+  says "no such account" is a staff list anybody can read. The test asserts
+  the two responses are identical and that, behind them, only the real
+  account got a link.
+- **Rate limited twice** — three per address and ten per IP every fifteen
+  minutes. The first stops one mailbox being flooded; the second stops the
+  form being used as a free mailer against a list of addresses, which the
+  per-address limit alone allows.
+- **A suspended account cannot be revived** by a link issued before it was
+  suspended.
+- **Links are built on `APP_URL`, not the request's `Host`** header, which a
+  caller controls — and rewriting that header is how a reset link gets
+  pointed at somebody else's server.
+
+### The mailer
+
+`src/lib/email.ts`, forty lines over `fetch` against Resend's HTTPS API — no
+SDK, no SMTP library, no new dependency. SMTP is the wrong shape for a
+serverless function: it wants a long-lived socket and a library to speak it.
+`RESEND_API_URL` overrides the endpoint for a self-hosted gateway, and the
+suite points it at a closed port so the real send path runs without mail
+leaving the machine.
+
+**It needs two environment variables before anything can be delivered:**
+`RESEND_API_KEY` and `EMAIL_FROM`, with `APP_URL` alongside them in
+production. Without them the form fails closed and says so, rather than
+reporting a link nobody will ever receive. See `.env.example`.
+
+### Also
+
+- Tests: 154 in 14 files, up from 136 in 13. Twelve guards reverted and
+  watched to go red.
+- The `password_resets` table is the 65th, and the schema fingerprint moves
+  with it, so the deployed database migrates itself on the next cold start.
+
 ## 2026-11-08 — A leave calendar with faces on it
 
 `/leave` listed requests. It could not answer the question the screen is

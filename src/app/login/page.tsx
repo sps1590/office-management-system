@@ -7,9 +7,14 @@ import { getSessionUser } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset?: string }>;
+}) {
   // Already signed in — no reason to show the form again.
   if (await getSessionUser()) redirect("/dashboard");
+  const justReset = (await searchParams).reset === "1";
 
   return (
     <AuthShell
@@ -24,7 +29,7 @@ export default async function LoginPage() {
         </>
       }
     >
-      <LoginForm />
+      <LoginForm justReset={justReset} />
     </AuthShell>
   );
 }

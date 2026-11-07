@@ -47,3 +47,17 @@ export function signupBucket(ip: string | null) {
 export function telemetryBucket(deviceId: string) {
   return `telemetry:${deviceId}`;
 }
+
+/*
+   Forgotten password: 3 per address per 15 minutes, and 10 per IP over the
+   same window. The first stops one mailbox being flooded by somebody
+   hammering the form; the second stops the form being used as a free mailer
+   against a list of addresses, which the per-address limit alone allows.
+*/
+export function resetBucket(email: string) {
+  return `reset:${email.toLowerCase()}`;
+}
+
+export function resetIpBucket(ip: string | null) {
+  return `reset-ip:${ip ?? "unknown"}`;
+}

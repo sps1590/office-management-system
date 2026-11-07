@@ -217,6 +217,26 @@ drift stale.
   `generateTempPassword()` or `node:crypto` directly. V8's generator is a
   predictable PRNG, and `createEmployeeAction` shipped temporary passwords
   out of it until 2026-11-07.
+- **A link that stands in for a password is hashed, single-use and short.**
+  `password_resets` keeps the SHA-256 and never the token, exactly as
+  `device_registrations` does. Spending one is a single
+  `UPDATE … WHERE used_at IS NULL AND expires_at > now() … RETURNING`, so a
+  race cannot spend it twice; issuing one invalidates the previous one;
+  checking whether a link is live must not consume it, or a mail client that
+  pre-fetches links kills every reset on arrival; and validation runs before
+  the token is touched, so a mistyped confirmation does not burn it.
+- **Anything reachable without a session answers the same for an address
+  that exists and one that does not.** Sign-in already does; so does
+  `requestPasswordResetAction`, down to the wording. A form that
+  distinguishes them is a staff directory anybody can read. Rate-limit such
+  a form per address *and* per IP — the per-address limit alone leaves it
+  usable as a mailer against a list.
+- **A link in an email is built on `APP_URL`, never on the request's
+  `Host`.** The header is attacker-controlled, and rewriting it is how a
+  reset link comes to point at somebody else's server. `appOrigin()` in
+  `email.ts` has the order; the request host is the development fallback
+  only. Anything that depends on delivery checks `emailConfigured()` first
+  and fails closed with a message that does not vary by address.
 - **Nobody resets their own password from an admin screen.** `/me` changes a
   password and demands the current one; `resetUserPasswordAction` does not,
   so it refuses when the target is the caller. Without that, anyone who found

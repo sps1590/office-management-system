@@ -82,6 +82,23 @@ export const IDENTITY_SCHEMA: string[] = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
 
+  // Forgotten-password links. Only the SHA-256 of the token is kept, the way
+  // device tokens are: a dump of this table hands an attacker nothing, since
+  // the only value that opens a link was in one email and is nowhere else.
+  `CREATE TABLE IF NOT EXISTS password_resets (
+     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     tenant_id    UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+     user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     token_hash   TEXT NOT NULL UNIQUE,
+     expires_at   TIMESTAMPTZ NOT NULL,
+     used_at      TIMESTAMPTZ,
+     requested_ip TEXT,
+     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+
+  `CREATE INDEX IF NOT EXISTS password_resets_user_idx
+     ON password_resets (user_id, expires_at DESC)`,
+
   // Generic fixed-window counter. Buckets are opaque strings such as
   // "login:someone@example.com" or "telemetry:<device uuid>", so one table
   // serves auth throttling and telemetry ingest throttling alike.

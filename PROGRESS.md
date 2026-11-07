@@ -33,12 +33,12 @@ Last updated: **2026-11-07**
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
-| 10 | Automated tests | **Started 2026-11-07** — 136 tests, the known defects, three invariants, bulk import, the timesheet and the leave calendar; most of the product still uncovered |
+| 10 | Automated tests | **Started 2026-11-07** — 154 tests, the known defects, three invariants, bulk import, the timesheet, the leave calendar and the password-reset flow; most of the product still uncovered |
 
-`npm run build` is clean. `npm run check` reports **387 SQL statements across
-122 files, 60 of 64 tables tenant-scoped, every tenant-scoped query filtering
+`npm run build` is clean. `npm run check` reports **394 SQL statements across
+128 files, 61 of 65 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
-`npm test` runs **136 tests in 13 files** against a throwaway Neon branch, green
+`npm test` runs **154 tests in 14 files** against a throwaway Neon branch, green
 in ~50 s. `npm run verify` is both, and is the command to run before a commit.
 
 ### Exercised on the running product, 2026-11-07
@@ -248,6 +248,13 @@ That run surfaced the cross-region latency problem recorded under
   bad rows by the spreadsheet's own line number and write the good ones
   anyway. New accounts' temporary passwords are shown once and downloadable
   as a CSV, never stored in readable form.
+- **Forgotten passwords** (added 2026-11-08): sign-in carries a *Forgot
+  password?* link. `/forgot-password` emails a one-hour, single-use link
+  whose SHA-256 alone is stored; `/reset-password` takes the new password
+  and ends every other session that account had open. The form answers the
+  same whether or not the address exists, is rate limited per address and
+  per IP, and issuing a link invalidates the previous one. It needs an email
+  provider configured to deliver anything — see "What's not built".
 - **Leave calendar** (added 2026-11-08): `/leave` draws the month with the
   face of every person whose leave covers each day — initials where there is
   no photo, a ring in the leave category's colour, pending requests faded
@@ -307,7 +314,7 @@ That run surfaced the cross-region latency problem recorded under
   validation, alerts, spacing and pending states cannot drift between modules.
 
 **Tests** — [docs/TESTING.md](docs/TESTING.md)
-- 136 `vitest` tests in 13 files running the real `src/lib` modules against a
+- 154 `vitest` tests in 14 files running the real `src/lib` modules against a
   throwaway Neon branch. Nothing in `src/` is mocked; no database call is
   faked. Five request-scoped modules are stubbed because they cannot exist
   outside a request, and the reason for each is at the top of
@@ -331,13 +338,20 @@ That run surfaced the cross-region latency problem recorded under
   not built. The server half is complete and the PWA tracker works, but it
   reports only while its page is open. This was flagged before any code was
   written; see [docs/PLAN.md](docs/PLAN.md#explicit-scope-boundary--read-before-sign-off).
-- **Email and SMS delivery.** Notification rows are written and shown in the
-  in-app notification centre; sending needs a provider key. One consequence
-  is worth naming: **self-service password reset is impossible without it**,
-  because a reset link has nowhere to go. A company admin can now reset
-  anybody else's password from `/users`, which covers every case but one — a
-  *sole* company admin who loses their own password still needs the operator
-  to reach the database. A second admin account avoids that entirely.
+- **Email delivery is built but switched off.** `src/lib/email.ts` sends
+  over Resend's HTTPS API, and the forgotten-password flow uses it — but it
+  does nothing until `RESEND_API_KEY` and `EMAIL_FROM` are set on the Vercel
+  project, with `APP_URL` beside them so reset links are not built from the
+  request's `Host` header. Until then the form says so plainly instead of
+  promising a link that will never arrive, and a company admin resets
+  anybody else's password from `/users`. Delivering to arbitrary employees
+  also needs a domain verified with the provider; the provider's own test
+  sender only reaches the account owner. One case is still uncovered either
+  way: a *sole* company admin who loses their own password with no mail
+  configured needs the operator to reach the database. A second admin
+  account avoids it entirely.
+- **SMS delivery.** Notification rows are written and shown in the in-app
+  notification centre; nothing sends a text.
 - **Payment gateway.** Plans and subscriptions are modelled; nothing bills.
 - **Polygon geofence editor.** The schema and the evaluation engine handle
   polygons; the UI creates circles only. The new map picker places a point,
@@ -375,7 +389,7 @@ That run surfaced the cross-region latency problem recorded under
   the geofence circle and the live counters. Route playback and clustering at
   scale are still only exercised by the code behind them — one device on one
   short track is not a crowd.
-- **There is now a test suite, and what it does not cover is the risk.** 136
+- **There is now a test suite, and what it does not cover is the risk.** 154
   tests (`npm test`) run the real `src/lib` modules against a throwaway Neon
   branch — see [docs/TESTING.md](docs/TESTING.md). They pin the four defects
   of 2026-11-07, each confirmed by reverting its fix and watching the test go

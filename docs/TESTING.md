@@ -118,7 +118,7 @@ assert on), `next/dynamic` (placeholder).
 
 ## What is covered
 
-136 tests in 13 files.
+154 tests in 14 files.
 
 ### The four regressions of 2026-11-07
 
@@ -134,6 +134,7 @@ Each was checked by reverting its fix and confirming the test goes red.
 | `tests/regressions/csv-and-patterns.test.ts` | The CSV codec (quoting, the BOM Excel needs, CRLF, blank rows, loose header matching) and the shift arithmetic (midnight wrap, unpaid break, rest days) | 3 tests (dropping the midnight wrap), 1 test (billing a rest day) |
 | `tests/regressions/spreadsheet-import.test.ts` | Employee and leave-allotment import: working passwords, a block of codes clear of `EMP-00001`, a line manager named later in the same file, bad rows reported without losing good ones, and a blank leave cell that is not a zero | 1 test (blank cell read as zero), 1 test (dropping the in-file duplicate check — which fails the *whole* insert) |
 | `tests/regressions/timesheet.test.ts` | Every calendar day present, rest days and holidays owing nothing, approved leave already paid for, future days out of the totals, and a shift overriding the company week | 2 tests (billing rest days and leave), 1 test (counting days that have not happened) |
+| `tests/regressions/password-reset-email.test.ts` | The whole forgotten-password flow: the token stored only as a hash, single use, expiry, a newer link killing an older, a read-only liveness check, the identical answer for a real and an unknown address, failing closed with no provider, a refusal that does not spend the link, sessions ended on reset, a suspended account not revived, and reset links built on `APP_URL` rather than the `Host` header | 1 test each for: storing the raw token, dropping `used_at IS NULL`, dropping the expiry, not invalidating the previous link, answering an unknown address differently, checking the provider after issuing, leaving the sessions alive, dropping the status filter, preferring the Host header, dropping the HTML escaping, spending the token before validation, and making the liveness check burn it |
 | `tests/regressions/leave-calendar.test.ts` | The calendar's overlap test, pending shown and rejected/cancelled not, the detail joined on in one query, tenant isolation; who is away today, approved only and bounded by the day; the month window's fallback, leap February and step across December; the week starting on the company's first working day | 1 test (containment instead of overlap), 1 test (drawing rejected leave), 1 test (counting a pending request as today's absence), 1 test (cross-tenant leak), 1 test (trusting `?month=`), 3 tests (assuming a 30-day month), 1 test (holidays unbounded at the top), 1 test (fixing the week to Sunday) |
 
 ### The invariants most expensive to get wrong
@@ -187,6 +188,11 @@ through, and this suite is a floor, not a safety net.
   The day-boundary behaviour verified by hand on 2026-11-06 has no test.
 - **No concurrency beyond `nextDocNumber`.** Nothing tests two people acting
   on the same record at once.
+- **No mail is ever sent in the suite.** `RESEND_API_URL` points at a closed
+  port, so `sendEmail` takes its real path and fails the way an outage
+  would. That the provider accepts the message, that the HTML renders in a
+  mail client, and that a verified sending domain is configured are all
+  unproven here.
 - **The leave calendar's grid is not rendered anywhere.** The tests cover the
   queries behind it and the two pure helpers (`monthWindow`, `weekStartDay`);
   nothing asserts that a face lands in the right cell, that the `+n` overflow
