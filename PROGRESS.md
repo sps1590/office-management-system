@@ -33,13 +33,13 @@ Last updated: **2026-11-07**
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
-| 10 | Automated tests | **Started 2026-11-07** — 61 tests, the four known defects and three invariants; most of the product still uncovered |
+| 10 | Automated tests | **Started 2026-11-07** — 73 tests, the known defects and three invariants; most of the product still uncovered |
 
 `npm run build` is clean. `npm run check` reports **351 SQL statements across
 111 files, 59 of 63 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
-`npm test` runs **61 tests in 8 files** against a throwaway Neon branch, green
-in ~41 s. `npm run verify` is both, and is the command to run before a commit.
+`npm test` runs **73 tests in 9 files** against a throwaway Neon branch, green
+in ~50 s. `npm run verify` is both, and is the command to run before a commit.
 
 ### Exercised on the running product, 2026-11-07
 
@@ -62,10 +62,12 @@ The deployed site was driven from Chrome with no session. All 34 protected
 routes redirect to `/login`; the telemetry endpoints answer 401 to a missing
 or invalid token and 405 to a `GET`; the console is silent on every public
 page; and `/api/telemetry/enroll`, which accepts a password, shares the web
-sign-in's rate-limit bucket rather than bypassing it. Two real findings came
-out of it, both fixed the same day: no response carried any security header
-(see [CHANGELOG.md](CHANGELOG.md)), and the signup form's full-name
-placeholder was a real person's name. The signed-in half of the sweep still
+sign-in's rate-limit bucket rather than bypassing it. Three real findings
+came out of it, all fixed the same day: no response carried any security
+header (see [CHANGELOG.md](CHANGELOG.md)); the signup form's full-name
+placeholder was a real person's name; and — found by being locked out of
+NMCP while trying to sign in for the rest of the sweep — the product had no
+password reset of any kind. The signed-in half of the sweep still
 needs a session and has not been done from Chrome.
 
 ### Verified against the live database, 2026-11-06
@@ -227,7 +229,7 @@ That run surfaced the cross-region latency problem recorded under
   validation, alerts, spacing and pending states cannot drift between modules.
 
 **Tests** — [docs/TESTING.md](docs/TESTING.md)
-- 61 `vitest` tests in 8 files running the real `src/lib` modules against a
+- 73 `vitest` tests in 9 files running the real `src/lib` modules against a
   throwaway Neon branch. Nothing in `src/` is mocked; no database call is
   faked. Five request-scoped modules are stubbed because they cannot exist
   outside a request, and the reason for each is at the top of
@@ -252,7 +254,12 @@ That run surfaced the cross-region latency problem recorded under
   reports only while its page is open. This was flagged before any code was
   written; see [docs/PLAN.md](docs/PLAN.md#explicit-scope-boundary--read-before-sign-off).
 - **Email and SMS delivery.** Notification rows are written and shown in the
-  in-app notification centre; sending needs a provider key.
+  in-app notification centre; sending needs a provider key. One consequence
+  is worth naming: **self-service password reset is impossible without it**,
+  because a reset link has nowhere to go. A company admin can now reset
+  anybody else's password from `/users`, which covers every case but one — a
+  *sole* company admin who loses their own password still needs the operator
+  to reach the database. A second admin account avoids that entirely.
 - **Payment gateway.** Plans and subscriptions are modelled; nothing bills.
 - **Polygon geofence editor.** The schema and the evaluation engine handle
   polygons; the UI creates circles only. The new map picker places a point,

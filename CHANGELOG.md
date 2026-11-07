@@ -3,6 +3,53 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-07 — A password can be reset again
+
+A company admin can now reset another user's password from `/users`. It shows
+a temporary password once, hands it to the admin to pass on, and signs the
+person out everywhere.
+
+### Why this was urgent
+
+There was no way back into an account whose password was lost. `/me` changes
+a password but demands the current one; a reset link needs a mail provider
+the product does not have; and `/users` offered only role and status. Anyone
+who forgot their password was locked out of their company permanently, with
+nobody able to help — and for a sole company admin that means losing the
+company. This project's own first admin walked into it the same day, and the
+only way back was editing the database by hand.
+
+It is the same pattern `createEmployeeAction` already used for a new hire, so
+nothing new had to be invented: generate, show once, hand over in person.
+
+### The two refusals
+
+- **Never on yourself.** A signed-in session can already change its own
+  password at `/me`, but only by proving the current one. Letting that session
+  reset itself here would turn a borrowed unlocked laptop into a permanent
+  account takeover, with the real owner locked out instead. Another company
+  admin does it, exactly as role and status changes already work. Removing
+  this guard turns two tests red, one of which watches the admin's own hash
+  change without the current password ever being proven.
+- **Never across a tenant.** The update is scoped to the caller's own
+  `tenant_id`, so another company's user id comes back "not found" with their
+  hash untouched.
+
+Restricted to `requireCompanyAdmin()`, not the permission matrix — an HR
+manager is refused however the matrix is configured. Every reset writes a
+`user.password_reset` audit row naming the admin who did it.
+
+### Temporary passwords were not random enough
+
+`createEmployeeAction` built them with `Math.random()`, which is a
+predictable PRNG, not a cryptographic one — so every new employee's first
+password came out of it. Both paths now use `generateTempPassword()`, which
+draws from `crypto.randomInt`, guarantees the lower/upper/digit the product's
+own policy demands, shuffles so those three are not in fixed positions, and
+leaves out `O/0` and `I/l/1` because these get read aloud and written down.
+
+12 new tests, bringing the suite to 73 in 9 files.
+
 ## 2026-11-07 — Security headers, and a name that should not have shipped
 
 Found by driving the deployed site in a browser, signed out.

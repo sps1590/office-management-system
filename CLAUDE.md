@@ -175,6 +175,17 @@ drift stale.
   moment they click: the shape of the two bugs fixed on 2026-11-05. When no
   approver can exist at all because the company has one active user, release
   the record and write an audit row rather than leaving it unactionable.
+- **A credential is never built from `Math.random()`.** Temporary passwords,
+  tokens and anything else somebody authenticates with come from
+  `generateTempPassword()` or `node:crypto` directly. V8's generator is a
+  predictable PRNG, and `createEmployeeAction` shipped temporary passwords
+  out of it until 2026-11-07.
+- **Nobody resets their own password from an admin screen.** `/me` changes a
+  password and demands the current one; `resetUserPasswordAction` does not,
+  so it refuses when the target is the caller. Without that, anyone who found
+  an unlocked laptop could take the account over permanently, locking out its
+  owner. A reset also deletes the target's sessions, because the other reason
+  to reset is that the account was already taken.
 - Run `npm run verify` (`npm run check` then `npm test`) before every commit.
   `check:tenancy` fails if a query on a tenant-scoped table omits `tenant_id`;
   add a `-- tenancy-ok: <reason>` comment only for a deliberate exception,

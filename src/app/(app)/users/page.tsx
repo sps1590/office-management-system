@@ -3,7 +3,11 @@ import Link from "next/link";
 import { ShieldCheck, UserCog } from "lucide-react";
 import { requireCompanyAdmin } from "@/lib/permissions";
 import { listEmployees, listRoles } from "@/lib/employees";
-import { assignRoleAction, setUserStatusAction } from "@/lib/actions/employees";
+import {
+  assignRoleAction,
+  resetUserPasswordAction,
+  setUserStatusAction,
+} from "@/lib/actions/employees";
 import AutoForm from "@/components/forms/AutoForm";
 import PermissionMatrix from "@/components/forms/PermissionMatrix";
 import { Avatar, Card, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
@@ -179,6 +183,32 @@ export default async function UsersPage({
             />
             <p className="help mt-3">
               Suspending someone also ends their live sessions immediately.
+            </p>
+          </Card>
+
+          <Card title="Reset a password">
+            <AutoForm
+              action={resetUserPasswordAction}
+              columns={1}
+              compact
+              submitLabel="Reset password"
+              fields={[
+                {
+                  name: "userId",
+                  label: "User",
+                  type: "select",
+                  required: true,
+                  options: users
+                    .filter((u) => u.id !== user.id)
+                    .map((u) => ({ value: u.id, label: `${u.full_name} — ${u.email}` })),
+                },
+              ]}
+            />
+            <p className="help mt-3">
+              Shows a temporary password once and signs the person out everywhere. Hand
+              it over directly and ask them to change it on their profile. You cannot
+              reset your own — ask another company admin, so a borrowed unlocked laptop
+              can never take an account over.
             </p>
           </Card>
 

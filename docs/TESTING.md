@@ -118,7 +118,7 @@ assert on), `next/dynamic` (placeholder).
 
 ## What is covered
 
-61 tests in 8 files.
+73 tests in 9 files.
 
 ### The four regressions of 2026-11-07
 
@@ -130,6 +130,7 @@ Each was checked by reverting its fix and confirming the test goes red.
 | `tests/regressions/geofenced-checkin.test.ts` | `require_geofenced_checkin` defaults FALSE; settings refuses to turn it on with no fence; toggle and delete refuse to remove the last one | 3 tests (column default), 4 tests (the three action guards) |
 | `tests/regressions/autoform-checkbox.test.tsx` | `AutoForm`'s checkbox branch renders its `FieldError` | 2 of 5 tests |
 | `tests/regressions/coordinate-precision.test.tsx` | `LocationPicker` uses `step="any"`; a 14-decimal paste is accepted and rounded to `NUMERIC(10,7)` | 1 test |
+| `tests/regressions/password-reset.test.ts` | `resetUserPasswordAction` sets a working password, ends the person's sessions, refuses self-reset and refuses across tenants | 2 tests (the self-reset guard) |
 
 ### The invariants most expensive to get wrong
 

@@ -19,6 +19,38 @@ export function verifyPassword(user: Pick<UserRow, "password_hash">, plain: stri
   return bcrypt.compareSync(plain, user.password_hash);
 }
 
+/*
+   Characters a person has to read off a screen and type into a phone, so the
+   pairs that get misread are left out: no O/0, no I/l/1.
+*/
+const PW_LOWER = "abcdefghijkmnpqrstuvwxyz";
+const PW_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const PW_DIGIT = "23456789";
+const PW_ALL = PW_LOWER + PW_UPPER + PW_DIGIT;
+
+/**
+ * A temporary password for an account somebody else is about to hand over.
+ *
+ * `crypto.randomInt`, never `Math.random()`: V8's generator is a predictable
+ * PRNG, and a temporary password is a credential like any other. It satisfies
+ * the product's own policy by construction -- a lower-case letter, an
+ * upper-case letter and a digit -- then shuffles, so the guaranteed three are
+ * not always in the first three positions.
+ */
+export function generateTempPassword(length = 14): string {
+  const chars = [
+    PW_LOWER[crypto.randomInt(PW_LOWER.length)],
+    PW_UPPER[crypto.randomInt(PW_UPPER.length)],
+    PW_DIGIT[crypto.randomInt(PW_DIGIT.length)],
+  ];
+  while (chars.length < length) chars.push(PW_ALL[crypto.randomInt(PW_ALL.length)]);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
 /**
  * Login lookup. Returns null rather than throwing when nothing matches, so
  * the caller can answer with the same generic message either way and never

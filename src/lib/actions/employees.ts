@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { hashPassword, requireUser, verifyPassword } from "@/lib/auth";
+import {
+  generateTempPassword,
+  hashPassword,
+  requireUser,
+  verifyPassword,
+} from "@/lib/auth";
 import { requireCompanyAdmin, requirePermission, isCompanyAdmin } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { audit, notify } from "@/lib/audit";
@@ -155,9 +160,7 @@ export async function createEmployeeAction(
     if (rows.length === 0) return { error: "Invalid department or line manager." };
   }
 
-  const tempPassword = `Oms-${Math.random().toString(36).slice(2, 8)}${Math.floor(
-    Math.random() * 90 + 10
-  )}`;
+  const tempPassword = generateTempPassword();
   if (d.employeeCode) {
     const codeClash = await db`
       SELECT 1 FROM users
@@ -398,6 +401,78 @@ export async function setUserStatusAction(
   });
   revalidatePath("/users");
   return { success: "Account status updated." };
+}
+
+const resetPasswordSchema = z.object({ userId: z.string().uuid() });
+
+/**
+ * Sets a new temporary password for somebody who has lost theirs, and hands
+ * it to the administrator to pass on.
+ *
+ * Until this existed there was no way back into an account at all. The
+ * self-service change at `/me` needs the current password, and a reset link
+ * needs a mail provider the product does not have -- so anyone who forgot
+ * their password was locked out of the company for good, with no one able to
+ * help them. That happened to this project's own first admin.
+ *
+ * Never on yourself, which is the security half of it. A signed-in session
+ * can already change its own password at `/me`, but only by proving the
+ * current one; letting that same session reset itself here would turn a
+ * borrowed unlocked laptop into a permanent account takeover, with the real
+ * owner locked out instead. Another company admin does it, exactly as role
+ * and status changes already work.
+ */
+export async function resetUserPasswordAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requireCompanyAdmin();
+  const parsed = resetPasswordSchema.safeParse({ userId: formData.get("userId") });
+  if (!parsed.success) return { error: "Invalid request." };
+  const { userId } = parsed.data;
+
+  if (userId === user.id) {
+    return {
+      error:
+        "You cannot reset your own password here — change it on your profile, where " +
+        "the current one has to be entered. Ask another company admin if you have lost it.",
+    };
+  }
+
+  const db = await getDb();
+  const tempPassword = generateTempPassword();
+  const updated = await db`
+    UPDATE users
+       SET password_hash = ${hashPassword(tempPassword)}, updated_at = now()
+     WHERE id = ${userId} AND tenant_id = ${user.tenant_id}
+    RETURNING full_name, email
+  `;
+  if (updated.length === 0) return { error: "User not found." };
+  const target = updated[0] as { full_name: string; email: string };
+
+  /*
+     Their live sessions go too. A password is usually reset because it was
+     lost or because the account was compromised, and in the second case
+     leaving the attacker's cookie working would make the reset pointless.
+  */
+  await db`DELETE FROM sessions WHERE user_id = ${userId} AND tenant_id = ${user.tenant_id}`;
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "user.password_reset",
+    entity: "user",
+    entityId: userId,
+    summary: `Reset the password for ${target.full_name} and ended their sessions`,
+  });
+
+  revalidatePath("/users");
+  return {
+    success:
+      `New password for ${target.full_name} (${target.email}): ${tempPassword} — give it ` +
+      `to them directly and ask them to change it on their profile. It is not shown again, ` +
+      `and any session they had open has been signed out.`,
+  };
 }
 
 const assignRoleSchema = z.object({
