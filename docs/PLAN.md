@@ -76,7 +76,31 @@ web deliverable**. Nothing else in the SRS is deferred.
 | Charts | Hand-written inline SVG components | ~2 KB instead of ~120 KB for a chart library; renders on the server with no hydration cost |
 | Maps | `leaflet` plus a thin own React wrapper, OpenStreetMap tiles | No API key, no billing, no `react-leaflet` version coupling |
 | Icons | `lucide-react` | Tree-shaken per icon |
+| Tests | `vitest` (dev dependency), against a throwaway Neon branch | See below |
 | Hosting | Vercel + GitHub | As requested |
+
+**Why `vitest` and not `node:test`** (added 2026-11-07, the project's first
+test dependency — rule 5 below says a dependency needs to be smaller than the
+code it replaces, so here is the accounting).
+
+The suite has to import the product's real modules, which means three things
+have to be resolvable that Node cannot resolve on its own:
+
+- `@/*` path aliases, which Node has no tsconfig-paths support for;
+- `server-only`, `next/headers`, `next/cache`, `next/navigation` and
+  `next/dynamic`, which have to be swapped for stand-ins — Node would need a
+  custom module loader per entry;
+- `.tsx`, for the two component regression tests. Node 24 strips types but
+  cannot transform JSX at all, so `node:test` could not run them.
+
+`vitest` does all three from eight lines of `resolve.alias` in
+`vitest.config.ts`, with no plugin: its esbuild transform reads `jsx` straight
+out of `tsconfig.json`. The `node:test` equivalent is a loader, a JSX
+transform step and a resolver — more of our own code than the config it
+replaces, and all of it in the test infrastructure where a bug is silent.
+
+It is a dev dependency: nothing in `src/` imports it and the production bundle
+is unchanged. Still eight runtime dependencies.
 
 **Optimisation rules applied throughout** (the brief asked for the most
 optimised design):

@@ -3,6 +3,104 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-07 — The first automated tests
+
+61 tests in 8 files, run with `npm test`. They exercise the product's own
+`src/lib` modules — the real Server Actions, the real SQL, the real permission
+layer — against a throwaway Neon branch. Nothing in `src/` is mocked and no
+database call is faked. How to run it and what it does not cover are in
+[docs/TESTING.md](docs/TESTING.md).
+
+This is the answer to the project's largest standing risk. The four defects
+found earlier the same day had all been "verified" by reading code, and one of
+them meant the GPS feature had never stored a row.
+
+### The test database never touches the live one
+
+NMCP is a live tenant in the production branch. Three independent things keep
+the suite away from it, and all three have to fail before a test could reach
+real data:
+
+- `scripts/test-branch.mjs` creates the branch with `--schema-only`. An
+  ordinary Neon branch is a copy-on-write clone and would carry every
+  production row into the test database; a schema-only branch carries the 63
+  tables and no rows at all, so nothing of a real company's is present.
+- The suite reads `TEST_DATABASE_URL` from `.env.test`, never `DATABASE_URL`,
+  and never loads `.env.local`. A working connection string cannot be picked
+  up by accident.
+- `assertThrowawayDatabase()` refuses any database holding a tenant whose slug
+  is not the suite's own, and runs before the first write. That interlock is
+  itself tested, by planting such a tenant in the test branch.
+
+Each test provisions its own company through `provisionTenant` — the same
+function registering a company runs — so a test tenant has the real role
+copies, accounts, leave types, pipeline stages and `EMP-00001` admin. Both
+defects of the `EMP-00001` kind were properties of a *freshly provisioned*
+tenant; a fixture would have had neither. Tenants are dropped afterwards and a
+global sweep removes anything a crashed run left behind.
+
+### Covered
+
+The four regressions of this morning first, each confirmed by reverting its
+fix and watching the test go red:
+
+- **Telemetry ingest.** A batch is stored, a replayed batch changes the row
+  count by nothing, two points sharing an instant collapse to one, and every
+  row is attributed from the token rather than the payload. Reverting the
+  `WHERE device_id IS NOT NULL` on the `ON CONFLICT` fails 6 of 7 tests with
+  42P10.
+- **Geofenced check-in.** `require_geofenced_checkin` defaults FALSE and a new
+  company can check somebody in with no fence anywhere; settings refuses to
+  turn the requirement on with no active office or warehouse fence; the
+  geofence toggle and delete both refuse to remove the last one while it is
+  on, and allow it once the requirement is off. Reverting the column default
+  fails 3 tests; reverting the three action guards fails 4.
+- **The checkbox refusal.** `AutoForm`'s checkbox branch renders its
+  `FieldError`, in the field-error style, beside its own control.
+- **The pasted coordinate.** `LocationPicker` carries `step="any"` on both
+  inputs, and a 14-decimal paste reaches the database rounded to the column's
+  `NUMERIC(10,7)` — about a centimetre, the only precision in those digits
+  that means anything.
+
+Then the invariants most expensive to get wrong:
+
+- **Tenant isolation.** Two companies with a row each in eleven tables. Every
+  list read run as one returns none of the other's, checked on a marker in the
+  row rather than on a count. Detail reads and the geofence write actions,
+  given the other company's real row id, answer "not found" rather than
+  obliging. A company admin is refused the platform views.
+- **The approval chain's two halves.** Nobody may decide a request they
+  raised, *and* resolution skips a stage landing on the requester and falls
+  back to a company admin other than them — for leave and for purchase
+  orders. Including the single-active-user case: the order is released with a
+  `po.auto_approved` audit row, that stops the moment a second user exists,
+  and a non-admin is refused it outright.
+- **Document numbers.** One counter per kind, no kind advancing another's, the
+  `employee` sequence starting where provisioning left it, and a company
+  adding its first employee without colliding with its admin.
+
+### Not covered
+
+[docs/TESTING.md](docs/TESTING.md) has the full list, and it is long. No page
+or route is rendered; there is no browser and no DOM; payroll, the ledger,
+invoicing, CRM, fleet and facilities have no test of their own; the whole
+timezone discipline is untested. This suite is a floor, not a safety net.
+
+### Also
+
+- `npm run verify` runs `npm run check` then `npm test`, which is the single
+  command to use before a commit. No git hook: the suite needs the network,
+  and a commit touching only a document should not pay for it.
+- `vitest` is the project's first test dependency. The reasoning against
+  `node:test` is recorded in [docs/PLAN.md](docs/PLAN.md), as CLAUDE.md
+  requires. Dev-only; the production bundle is unchanged at eight runtime
+  dependencies.
+- No product behaviour was changed to make a test pass. The suite found no new
+  defect — it did find one in itself: the first idempotency test recomputed its
+  timestamps per call, so it was not replaying a batch at all and would have
+  passed whatever `ON CONFLICT` did. It now uses a fixed instant, and that is
+  written down in TESTING.md as the trap it is.
+
 ## 2026-11-07 — GPS ingest fixed, and coordinates picked on a map
 
 Four defects, all found by exercising the product rather than reading it.

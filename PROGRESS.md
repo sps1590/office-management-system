@@ -10,10 +10,12 @@ alone what exists, what does not, and why decisions were made.
 - Database reference: [docs/DATABASE.md](docs/DATABASE.md) (generated).
 - Deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 - Mobile / GPS scope: [docs/MOBILE.md](docs/MOBILE.md).
+- Tests — how to run them, and what they do not cover:
+  [docs/TESTING.md](docs/TESTING.md).
 - Dated history of changes: [CHANGELOG.md](CHANGELOG.md).
 - Conventions an agent must follow: [CLAUDE.md](CLAUDE.md).
 
-Last updated: **2026-11-06**
+Last updated: **2026-11-07**
 
 ---
 
@@ -31,10 +33,13 @@ Last updated: **2026-11-06**
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
+| 10 | Automated tests | **Started 2026-11-07** — 61 tests, the four known defects and three invariants; most of the product still uncovered |
 
-`npm run build` is clean. `npm run check` reports **349 SQL statements across
+`npm run build` is clean. `npm run check` reports **351 SQL statements across
 111 files, 59 of 63 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
+`npm test` runs **61 tests in 8 files** against a throwaway Neon branch, green
+in ~41 s. `npm run verify` is both, and is the command to run before a commit.
 
 ### Exercised on the running product, 2026-11-07
 
@@ -44,9 +49,10 @@ It found four defects, all now fixed and re-tested: telemetry ingest answered
 infer), a new company could not check anybody in (the geofence requirement
 defaulted on with no geofence to satisfy it), a coordinate pasted from a
 mapping site was refused by `step="0.0000001"`, and a refusal aimed at a
-checkbox was never rendered. All 35 routes returned 200 with no error
-boundary. **The live map was seen with data on it for the first time** —
-eight ingested points, a person marker, the fence circle and the four
+checkbox was never rendered. All 34 static signed-in routes returned 200 with no
+error boundary (the four `[id]` routes need a record to address).
+**The live map was seen with data on it for the first time** — eight
+ingested points, a person marker, the fence circle and the four
 counters. The tenant was deleted afterwards; NMCP has 2 users and no stray
 rows.
 
@@ -131,7 +137,7 @@ That run surfaced the cross-region latency problem recorded under
 ## What's built
 
 **Foundation**
-- 62-table Postgres schema in `src/lib/schema/`, one ordered list of idempotent
+- 63-table Postgres schema in `src/lib/schema/`, one ordered list of idempotent
   statements that both creates a fresh database and migrates a deployed one on
   cold start. 69 reviewed indexes. UUID primary keys, per the SRS.
 - `docs/DATABASE.md` generated from that schema (`npm run docs:schema`), and
@@ -208,6 +214,25 @@ That run surfaced the cross-region latency problem recorded under
 - One spec-driven `AutoForm` behind the straightforward CRUD screens, so
   validation, alerts, spacing and pending states cannot drift between modules.
 
+**Tests** — [docs/TESTING.md](docs/TESTING.md)
+- 61 `vitest` tests in 8 files running the real `src/lib` modules against a
+  throwaway Neon branch. Nothing in `src/` is mocked; no database call is
+  faked. Five request-scoped modules are stubbed because they cannot exist
+  outside a request, and the reason for each is at the top of
+  `vitest.config.ts`.
+- `scripts/test-branch.mjs` creates and deletes that branch with the Neon CLI,
+  `--schema-only` so it carries the schema and none of production's rows.
+  Three independent guards keep the suite off the live database, and the
+  interlock that refuses a database holding somebody else's tenant is itself
+  tested.
+- The four defects of 2026-11-07, each confirmed by reverting its fix and
+  watching the test go red; tenant isolation across eleven tables and both
+  write paths; both halves of the approval chain including the
+  single-active-user release; and the document-number sequences.
+- `npm run verify` = `npm run check && npm test`, the one command before a
+  commit. Most of the product is still uncovered — see the risk note below,
+  which says which parts.
+
 ## What's not built
 
 - **Native MDM mobile app** — specified in [docs/MOBILE.md](docs/MOBILE.md),
@@ -253,11 +278,26 @@ That run surfaced the cross-region latency problem recorded under
   the geofence circle and the live counters. Route playback and clustering at
   scale are still only exercised by the code behind them — one device on one
   short track is not a crowd.
-- **Still no automated test suite, and it is now the biggest risk.** The four
-  defects found on 2026-11-07 had all been "verified" before — by reading the
-  code, not by running it. One of them meant the GPS feature had never worked
-  at all. The two static checks (`npm run check`) cover tenancy and column
-  existence only; nothing exercises a code path.
+- **There is now a test suite, and what it does not cover is the risk.** 61
+  tests (`npm test`) run the real `src/lib` modules against a throwaway Neon
+  branch — see [docs/TESTING.md](docs/TESTING.md). They pin the four defects
+  of 2026-11-07, each confirmed by reverting its fix and watching the test go
+  red, plus tenant isolation across eleven tables, both halves of the approval
+  chain, and the document-number sequences.
+
+  What they do not reach is most of the product. **No page or route is
+  rendered**, so nothing here would catch a broken screen — the 34 static
+  signed-in routes returning 200 is still a manual check. There is no
+  browser and no DOM: the two component tests assert on static markup,
+  which proves the checkbox refusal is *in* the markup and the coordinate
+  inputs carry `step="any"`, not that either works in front of a person.
+  **Payroll, the double-entry ledger, invoicing, expense claims, CRM,
+  fleet and facilities have no test of their own** — the ledger balancing
+  after a posting is still only the hand check of 2026-11-05. And the
+  whole `tenants.timezone` discipline is untested, so the day-boundary
+  behaviour verified by hand on 2026-11-06 could regress silently. The
+  suite is a floor under the four known defects and three invariants; it
+  is not a safety net under a change anywhere else.
 - **Two deliberate behaviours that look like bugs.** A sole company admin
   cannot *request* leave, because an approver chain needs somebody other than
   the requester — HR manual entry is the path for recording their own

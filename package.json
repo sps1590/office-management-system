@@ -11,6 +11,12 @@
     "check": "npm run check:tenancy && npm run check:columns",
     "check:tenancy": "node scripts/check-tenancy.mjs",
     "check:columns": "node scripts/check-columns.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:branch:create": "node scripts/test-branch.mjs create",
+    "test:branch:delete": "node scripts/test-branch.mjs delete",
+    "test:ci": "node scripts/test-branch.mjs ensure && vitest run",
+    "verify": "npm run check && npm test",
     "docs:schema": "node scripts/gen-schema-docs.mjs",
     "docs:srs": "python -I scripts/extract-srs.py"
   },
@@ -34,6 +40,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

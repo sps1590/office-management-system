@@ -96,6 +96,38 @@ drift stale.
 - New dependencies need a reason recorded in `docs/PLAN.md`. The brief asked
   for the most optimised design; prefer a few lines of own code over a package.
 
+## Tests
+
+- `npm test` runs `vitest` against a **throwaway Neon branch**, never the
+  production one. `npm run test:branch:create` makes it; see
+  [docs/TESTING.md](docs/TESTING.md) for the three guards that keep the suite
+  off the live database and the full list of what it does not cover.
+- **A test that has not been watched to fail is not a test.** Revert the code
+  it covers, confirm it goes red, restore. Everything in `tests/regressions/`
+  has been through that, and TESTING.md records which reverts fail which
+  tests. A test that cannot fail reports safety that is not there, which is
+  worse than no test at all.
+- **Nothing in `src/` is mocked.** Only the five request-scoped modules that
+  cannot exist outside a request are stubbed (`server-only`, `next/headers`,
+  `next/cache`, `next/navigation`, `next/dynamic`), and the reason for each is
+  at the top of `vitest.config.ts`. Do not reach for a mock of a `src/lib`
+  function: if the real one cannot run in a test, that is worth knowing.
+- **A test builds its own company through `provisionTenant`**, the function
+  real signup runs — never a hand-written fixture. Both `EMP-00001` collisions
+  and the geofence dead end were properties of a *freshly provisioned* tenant,
+  which a fixture would not have reproduced. `createTestTenant()` in
+  `tests/helpers/world.ts` does it; drop the tenant in `afterAll`.
+- **A replayed anything needs a fixed instant**, captured once, not
+  `Date.now()` per call. The first idempotency test here recomputed its
+  timestamps and so was not replaying a batch at all — it would have passed
+  whatever `ON CONFLICT` did.
+- Do not change product behaviour to make a test pass. If a test uncovers a
+  real defect, fix it deliberately and write it up in
+  [CHANGELOG.md](CHANGELOG.md).
+- Keep TESTING.md's "What is NOT covered" honest and current. Overstating
+  coverage is the specific habit that let the four defects of 2026-11-07
+  through.
+
 ## Hosting
 
 - Functions run in `sin1` (Singapore), beside the Neon database in
@@ -143,10 +175,10 @@ drift stale.
   moment they click: the shape of the two bugs fixed on 2026-11-05. When no
   approver can exist at all because the company has one active user, release
   the record and write an audit row rather than leaving it unactionable.
-- Run `npm run check:tenancy` before every commit that touches SQL. It fails
-  if a query on a tenant-scoped table omits `tenant_id`. Add a
-  `-- tenancy-ok: <reason>` comment only for a deliberate exception, such as
-  the login lookup that happens before any tenant is known.
+- Run `npm run verify` (`npm run check` then `npm test`) before every commit.
+  `check:tenancy` fails if a query on a tenant-scoped table omits `tenant_id`;
+  add a `-- tenancy-ok: <reason>` comment only for a deliberate exception,
+  such as the login lookup that happens before any tenant is known.
 - Managing users, roles and the permission matrix is restricted to
   `role_key IN ('company_admin')` through `requireCompanyAdmin()` — hard-coded,
   never driven by the configurable permission matrix itself. Letting
