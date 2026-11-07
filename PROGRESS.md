@@ -56,6 +56,18 @@ ingested points, a person marker, the fence circle and the four
 counters. The tenant was deleted afterwards; NMCP has 2 users and no stray
 rows.
 
+### Swept in a browser, signed out, 2026-11-07
+
+The deployed site was driven from Chrome with no session. All 34 protected
+routes redirect to `/login`; the telemetry endpoints answer 401 to a missing
+or invalid token and 405 to a `GET`; the console is silent on every public
+page; and `/api/telemetry/enroll`, which accepts a password, shares the web
+sign-in's rate-limit bucket rather than bypassing it. Two real findings came
+out of it, both fixed the same day: no response carried any security header
+(see [CHANGELOG.md](CHANGELOG.md)), and the signup form's full-name
+placeholder was a real person's name. The signed-in half of the sweep still
+needs a session and has not been done from Chrome.
+
 ### Verified against the live database, 2026-11-06
 
 Counters were read twice from one throwaway tenant seeded with rows that

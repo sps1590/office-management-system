@@ -3,6 +3,52 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-07 — Security headers, and a name that should not have shipped
+
+Found by driving the deployed site in a browser, signed out.
+
+### Every response now carries security headers
+
+Nothing was setting any. `poweredByHeader: false` was the only hardening in
+`next.config.ts`, and neither `vercel.json` nor a middleware added more, so
+production answered with Vercel's HSTS and nothing else.
+
+- **`X-Frame-Options: DENY`** and **`Content-Security-Policy:
+  frame-ancestors 'none'`.** Any site could put the sign-in page in an
+  invisible iframe and harvest clicks on it. The CSP carries that one
+  directive deliberately: a full policy needs a nonce on every inline script
+  Next.js emits, and a half-written one fails in production rather than at
+  build time, while `frame-ancestors` restricts no resource and is safe
+  alone.
+- **`Referrer-Policy: strict-origin-when-cross-origin`.** This one is the
+  map's doing. Tiles come from OpenStreetMap and place lookups from
+  Nominatim, both from the browser, so with no policy the full URL of
+  whatever page the person was on — `/employees/<id>`, a payslip, a
+  client — went to a third-party tile server with every tile. It now sends
+  the origin and no path.
+- **`X-Content-Type-Options: nosniff`**, and a **`Permissions-Policy`** that
+  keeps geolocation (the location picker and the PWA tracker both need it,
+  from this origin only) and denies camera, microphone, payment, USB and the
+  motion sensors the product never uses.
+
+### The signup page carried the operator's own name
+
+`RegisterForm.tsx` had `placeholder="Shahriar Parvez"` on the full-name
+field, so every company that ever registered saw a stranger's personal name
+in the box. It is a format hint now. The company and phone placeholders
+beside it were always generic.
+
+### Checked and found correct
+
+Worth recording, because the point of the sweep was to find the opposite.
+All 34 protected routes redirect to `/login` when signed out, `/platform`
+included. Telemetry ingest answers 401 to a missing and to an invalid token
+with one generic message either way, and 405 to a `GET`. And
+`/api/telemetry/enroll`, which takes an email and a password and so is a
+second sign-in door, is rate limited on the same bucket as the web login,
+checked before the user lookup, with the same generic refusal — it is not a
+way around the sign-in limiter.
+
 ## 2026-11-07 — The first automated tests
 
 61 tests in 8 files, run with `npm test`. They exercise the product's own

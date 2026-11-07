@@ -60,7 +60,7 @@ export default function RegisterForm() {
             name="adminName"
             required
             autoComplete="name"
-            placeholder="Shahriar Parvez"
+            placeholder="First and last name"
             className="input"
             aria-invalid={!!fe?.adminName}
           />
