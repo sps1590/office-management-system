@@ -225,8 +225,13 @@ drift stale.
   `requireUser()` and at login. Sign-in and signup are rate limited in
   Postgres (`src/lib/rate-limit.ts`); keep login errors generic so they never
   reveal whether an account exists.
-- Passwords are always bcrypt-hashed (`bcryptjs`, cost 10) and never logged,
-  returned to a client, or stored anywhere else.
+- Passwords are always bcrypt-hashed (`bcryptjs`, cost 10) and never logged
+  or stored anywhere else. The one thing that does reach a client is a
+  *freshly generated* temporary password, on its way to the person it belongs
+  to — `createEmployeeAction`, `resetUserPasswordAction` and the bulk import
+  all return one, shown once and never recoverable afterwards, because the
+  only copy kept is the hash. A password read back out of the database, or
+  one somebody typed, never goes anywhere.
 - Telemetry ingest (`/api/telemetry/*`) authenticates with a device token
   whose SHA-256 hash is stored in `device_registrations`. Derive `tenant_id`
   and `user_id` from the token, never from the request body, and rate-limit

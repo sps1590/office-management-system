@@ -12,7 +12,7 @@ import { DAY_NAMES, shiftMinutes, workDaysLabel } from "@/lib/work-pattern";
 import { changePasswordAction } from "@/lib/actions/employees";
 import AutoForm from "@/components/forms/AutoForm";
 import { Avatar, Card, Field, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
-import { addDays, duration, formatDate, isoDate, money, monthName, num } from "@/lib/utils";
+import { addDays, cn, duration, formatDate, isoDate, money, monthName, num } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My profile" };
 
@@ -269,7 +269,20 @@ export default async function MyProfilePage({
                 </thead>
                 <tbody>
                   {sheet.days.map((d) => (
-                    <tr key={d.date} data-muted={!d.working || undefined}>
+                    /*
+                       A rest day and a day that has not happened both need to
+                       read as "not counted here" -- the footer totals exclude
+                       them, and without a visual difference the Expected
+                       column looks as though it should sum to the total and
+                       does not.
+                    */
+                    <tr
+                      key={d.date}
+                      className={cn(
+                        !d.working && "bg-surface-2/40 text-fg-subtle",
+                        d.status === "scheduled" && "opacity-55"
+                      )}
+                    >
                       <td className={d.date === today ? "font-semibold" : undefined}>
                         {formatDate(d.date, tz)}
                       </td>
@@ -296,7 +309,7 @@ export default async function MyProfilePage({
                         ) : d.status === "rest_day" ? (
                           <span className="text-fg-subtle text-xs">Rest day</span>
                         ) : d.status === "scheduled" ? (
-                          <span className="text-fg-subtle text-xs">—</span>
+                          <span className="text-fg-subtle text-xs">To come</span>
                         ) : (
                           <StatusBadge status={d.status} />
                         )}
