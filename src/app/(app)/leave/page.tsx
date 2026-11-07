@@ -14,8 +14,10 @@ import {
   decideLeaveAction,
   requestLeaveAction,
 } from "@/lib/actions/leave";
+import { importLeaveAllotmentAction } from "@/lib/actions/import";
 import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
+import CsvImport from "@/components/forms/CsvImport";
 import FilterBar from "@/components/FilterBar";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
 import { formatDate, isoDate, num, titleCase } from "@/lib/utils";
@@ -339,6 +341,41 @@ export default async function LeavePage({
                   ]}
                 />
               </div>
+            </Card>
+          )}
+
+          {hasPermission(user, "leave", "edit") && (
+            <Card title="Annual allotment">
+              <CsvImport
+                action={importLeaveAllotmentAction}
+                templateHref={`/api/templates/leave?year=${year}`}
+                templateLabel={`Download ${year} allotment sheet`}
+                submitLabel="Import allotments"
+                note={
+                  <>
+                    The sheet comes out already filled: one row per active employee, one
+                    column per leave category, every cell holding what they are entitled
+                    to today. Change the figures that are wrong and upload it back. A
+                    cell left <em>blank</em> means &ldquo;leave this category alone&rdquo;
+                    — which is not the same as typing 0.
+                  </>
+                }
+              >
+                <div className="max-w-40">
+                  <label className="label" htmlFor="allotment-year">
+                    Leave year
+                  </label>
+                  <input
+                    id="allotment-year"
+                    name="year"
+                    type="number"
+                    min={2000}
+                    max={2100}
+                    defaultValue={year}
+                    className="input"
+                  />
+                </div>
+              </CsvImport>
             </Card>
           )}
         </div>

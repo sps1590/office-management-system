@@ -90,3 +90,24 @@ export type ActionState = {
    */
   suggestions?: { label: string; values: Record<string, string> }[];
 } | null;
+
+/**
+ * What a spreadsheet import hands back.
+ *
+ * Deliberately not an `ActionState`: one `error` string cannot say "forty of
+ * your forty-three rows went in, and here is what was wrong with the other
+ * three". An import that refuses the whole file because of one bad cell makes
+ * somebody bisect their own spreadsheet, so the valid rows are written and
+ * the rest are reported by line number — the line number Excel shows, so it
+ * can be found.
+ */
+export type ImportState = {
+  error?: string;
+  created?: number;
+  updated?: number;
+  /** `row` is the spreadsheet's own line number, header counted. */
+  problems?: { row: number; message: string }[];
+  /** Shown once, never stored: new accounts need a password handed over. */
+  credentials?: { name: string; email: string; password: string }[];
+  summary?: string;
+} | null;

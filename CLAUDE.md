@@ -89,6 +89,29 @@ drift stale.
   Postgres array literal has to spell every null out, while a JSON object just
   omits the key. `jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS
   t(col TYPE, …)` is the safer shape once most columns are optional.
+- **An uploaded spreadsheet reports per row and writes the rest.** An import
+  returns `ImportState`, not `ActionState`: a count, and the rows it refused
+  keyed by the line number the spreadsheet itself shows. Refusing a whole
+  file over one bad cell makes somebody bisect their own data. A blank cell
+  means "leave this alone" and never zero — the two are different
+  instructions, and reading one as the other silently wipes a figure nobody
+  asked to change.
+- **What a person is expected to work comes from `expectedForDay`, never from
+  `tenant_settings` directly.** A shift overrides the company week for the
+  people on it, and the fallback is inside that function, so a caller reading
+  `standard_work_minutes` straight off the settings marks every night-shift
+  worker late and bills them for their own rest day. The same applies to
+  `computeLateMinutes`, `computeOvertimeMinutes` and `resolveStatus`, which
+  all take an optional shift.
+- **A timesheet starts from the calendar, not from the records.** Querying
+  `attendance_records` for a range shows only the days somebody turned up, so
+  a month with four absences looks like a month with none. Expand the day
+  range and ask what happened on each day. Days after the tenant's today are
+  excluded from every total, or the 10th of the month reads as a deficit.
+- **Pure helpers that a client component needs cannot live in a `server-only`
+  module.** Importing one from a `"use client"` file is a build error, not a
+  runtime leak. `work-pattern.ts` holds the arithmetic and `shifts.ts` the
+  queries, for exactly this reason.
 - Validate every new action input with `zod`, in a schema declared next to the
   action. No hand-parsed `FormData`.
 - Colours come from the CSS custom properties in `globals.css` and must work

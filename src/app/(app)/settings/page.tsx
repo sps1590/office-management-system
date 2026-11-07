@@ -8,7 +8,17 @@ import {
   updateCompanyAction,
   updateSettingsAction,
 } from "@/lib/actions/admin";
+import {
+  assignShiftAction,
+  createShiftAction,
+  deleteShiftAction,
+  updateWorkingWeekAction,
+} from "@/lib/actions/shifts";
+import { listShifts, staffWithShifts } from "@/lib/shifts";
+import { DAY_NAMES, shiftMinutes, workDaysLabel } from "@/lib/work-pattern";
 import AutoForm from "@/components/forms/AutoForm";
+import ActionButton from "@/components/ActionButton";
+import { ShiftForm, WorkingWeekForm } from "@/components/forms/WorkingPatternForms";
 import { Card, Field, PageHeader } from "@/components/ui";
 import { duration, formatDate, monthName } from "@/lib/utils";
 
@@ -36,7 +46,14 @@ export default async function SettingsPage() {
     minute: "2-digit",
     hourCycle: "h23",
   });
-  const settings = await getSettings(user.tenant_id);
+  const [settings, shifts, staff] = await Promise.all([
+    getSettings(user.tenant_id),
+    listShifts(user.tenant_id),
+    staffWithShifts(user.tenant_id),
+  ]);
+  const workingDays = [0, 1, 2, 3, 4, 5, 6].filter(
+    (d) => !(settings.weekend_days ?? []).includes(d)
+  );
   const db = await getDb();
 
   const rows = await db`
@@ -172,6 +189,125 @@ export default async function SettingsPage() {
             { name: "poPrefix", label: "Purchase order prefix", required: true, defaultValue: settings.po_prefix },
           ]}
         />
+      </Card>
+
+      <Card title="Working week and shifts" className="mt-4">
+        <p className="text-sm text-fg-muted mb-4">
+          The working week below is the company default. A shift overrides it for the
+          people assigned to one, and everybody else follows the default — so a company
+          that runs a single pattern never needs to create a shift at all. Both feed
+          every employee&rsquo;s timesheet.
+        </p>
+
+        <div className="grid gap-5 lg:grid-cols-2 items-start">
+          <div className="panel p-4">
+            <WorkingWeekForm action={updateWorkingWeekAction} workingDays={workingDays} />
+            <dl className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-border">
+              <Field label="Day starts">{settings.work_start_time.slice(0, 5)}</Field>
+              <Field label="Standard day">{duration(settings.standard_work_minutes)}</Field>
+              <Field label="Rest days">
+                {(settings.weekend_days ?? []).map((d) => DAY_NAMES[d]).join(", ") || "None"}
+              </Field>
+              <Field label="Late grace">{settings.grace_minutes} min</Field>
+            </dl>
+          </div>
+
+          <div className="panel p-4">
+            <p className="text-sm font-medium mb-3">Add a shift</p>
+            <ShiftForm action={createShiftAction} defaultDays={workingDays} />
+          </div>
+        </div>
+
+        <div className="table-wrap mt-5">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Shift</th>
+                <th>Hours</th>
+                <th>Net day</th>
+                <th>Days</th>
+                <th className="right">People</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {shifts.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-fg-subtle">
+                    No shifts yet — everyone follows the company default above.
+                  </td>
+                </tr>
+              ) : (
+                shifts.map((s) => (
+                  <tr key={s.id}>
+                    <td className="font-medium">{s.name}</td>
+                    <td className="text-fg-muted">
+                      {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
+                      {s.break_minutes > 0 && (
+                        <span className="text-fg-subtle"> · {s.break_minutes}m break</span>
+                      )}
+                    </td>
+                    <td className="text-fg-muted">{duration(shiftMinutes(s))}</td>
+                    <td className="text-fg-muted">{workDaysLabel(s.work_days)}</td>
+                    <td className="right tabular-nums">{s.user_count ?? 0}</td>
+                    <td className="right">
+                      <ActionButton
+                        action={deleteShiftAction}
+                        values={{ shiftId: s.id }}
+                        label="Delete"
+                        className="btn-ghost btn-sm text-danger"
+                        confirm={
+                          (s.user_count ?? 0) > 0
+                            ? `${s.user_count} person(s) are on "${s.name}". Deleting it puts them back on the company default. Continue?`
+                            : `Delete the shift "${s.name}"?`
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {shifts.length > 0 && (
+          <div className="mt-5 max-w-md">
+            <p className="text-sm font-medium mb-3">Put someone on a shift</p>
+            <AutoForm
+              action={assignShiftAction}
+              columns={1}
+              compact
+              submitLabel="Assign shift"
+              fields={[
+                {
+                  name: "userId",
+                  label: "Employee",
+                  type: "select",
+                  required: true,
+                  options: staff.map((s) => ({
+                    value: s.id,
+                    label: `${s.full_name}${s.shift_name ? ` — on ${s.shift_name}` : " — company default"}`,
+                  })),
+                },
+                {
+                  name: "shiftId",
+                  label: "Shift",
+                  type: "select",
+                  required: false,
+                  options: [
+                    { value: "", label: "Company default (no shift)" },
+                    ...shifts
+                      .filter((s) => s.is_active)
+                      .map((s) => ({
+                        value: s.id,
+                        label: `${s.name} — ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`,
+                      })),
+                  ],
+                },
+              ]}
+            />
+          </div>
+        )}
       </Card>
 
       <Card title="Approval workflows" className="mt-4">

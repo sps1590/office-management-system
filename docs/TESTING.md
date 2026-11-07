@@ -118,7 +118,7 @@ assert on), `next/dynamic` (placeholder).
 
 ## What is covered
 
-73 tests in 9 files.
+119 tests in 12 files.
 
 ### The four regressions of 2026-11-07
 
@@ -131,6 +131,9 @@ Each was checked by reverting its fix and confirming the test goes red.
 | `tests/regressions/autoform-checkbox.test.tsx` | `AutoForm`'s checkbox branch renders its `FieldError` | 2 of 5 tests |
 | `tests/regressions/coordinate-precision.test.tsx` | `LocationPicker` uses `step="any"`; a 14-decimal paste is accepted and rounded to `NUMERIC(10,7)` | 1 test |
 | `tests/regressions/password-reset.test.ts` | `resetUserPasswordAction` sets a working password, ends the person's sessions, refuses self-reset and refuses across tenants | 2 tests (the self-reset guard) |
+| `tests/regressions/csv-and-patterns.test.ts` | The CSV codec (quoting, the BOM Excel needs, CRLF, blank rows, loose header matching) and the shift arithmetic (midnight wrap, unpaid break, rest days) | 3 tests (dropping the midnight wrap), 1 test (billing a rest day) |
+| `tests/regressions/spreadsheet-import.test.ts` | Employee and leave-allotment import: working passwords, a block of codes clear of `EMP-00001`, a line manager named later in the same file, bad rows reported without losing good ones, and a blank leave cell that is not a zero | 1 test (blank cell read as zero), 1 test (dropping the in-file duplicate check — which fails the *whole* insert) |
+| `tests/regressions/timesheet.test.ts` | Every calendar day present, rest days and holidays owing nothing, approved leave already paid for, future days out of the totals, and a shift overriding the company week | 2 tests (billing rest days and leave), 1 test (counting days that have not happened) |
 
 ### The invariants most expensive to get wrong
 

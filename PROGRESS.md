@@ -33,12 +33,12 @@ Last updated: **2026-11-07**
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
-| 10 | Automated tests | **Started 2026-11-07** — 73 tests, the known defects and three invariants; most of the product still uncovered |
+| 10 | Automated tests | **Started 2026-11-07** — 119 tests, the known defects, three invariants, bulk import and the timesheet; most of the product still uncovered |
 
 `npm run build` is clean. `npm run check` reports **351 SQL statements across
 111 files, 59 of 63 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
-`npm test` runs **73 tests in 9 files** against a throwaway Neon branch, green
+`npm test` runs **119 tests in 12 files** against a throwaway Neon branch, green
 in ~50 s. `npm run verify` is both, and is the command to run before a commit.
 
 ### Exercised on the running product, 2026-11-07
@@ -196,7 +196,7 @@ That run surfaced the cross-region latency problem recorded under
 ## What's built
 
 **Foundation**
-- 63-table Postgres schema in `src/lib/schema/`, one ordered list of idempotent
+- 64-table Postgres schema in `src/lib/schema/`, one ordered list of idempotent
   statements that both creates a fresh database and migrates a deployed one on
   cold start. 69 reviewed indexes. UUID primary keys, per the SRS.
 - `docs/DATABASE.md` generated from that schema (`npm run docs:schema`), and
@@ -226,6 +226,28 @@ That run surfaced the cross-region latency problem recorded under
   overtime computation from tenant settings, HR manual entry, configurable
   multi-stage leave approval with entitlement enforcement, payroll generation
   from attendance with approve-then-pay posting to the ledger.
+- **Working patterns and the timesheet** (added 2026-11-07): the company's
+  working week is set by ticking days on the settings screen, and named
+  *shifts* override it for the people assigned to one — start, end, unpaid
+  break, working days and an optional grace period, with a shift that crosses
+  midnight counted as its real length. The attendance formula reads the
+  person's shift for lateness, overtime and half-day, falling back to the
+  company default when they have none. `/me` now shows a real monthly
+  timesheet built from the calendar rather than from the records, so a day
+  somebody never checked in appears as an absence instead of not appearing at
+  all; rest days, public holidays and approved leave expect nothing, and days
+  still to come are excluded from the totals.
+- **Bulk import** (added 2026-11-07): `/employees` downloads a CSV template
+  pre-filled with the company's own first department, role and shift, and
+  takes it back filled in — up to 200 rows, matching department, role and
+  shift by name and the line manager by email, resolved in a second pass so a
+  manager listed further down the same file still links. `/leave` downloads
+  an allotment sheet already carrying every active employee and every leave
+  category with their current entitlement; a blank cell on the way back means
+  "leave this category alone", which is not the same as a zero. Both report
+  bad rows by the spreadsheet's own line number and write the good ones
+  anyway. New accounts' temporary passwords are shown once and downloadable
+  as a CSV, never stored in readable form.
 - **Fleet**: registry with document-expiry warnings, requisition workflow
   (request → approve → start → close with odometer and fuel), maintenance
   schedule, running-cost chart. Trip closure updates the odometer and posts
@@ -274,7 +296,7 @@ That run surfaced the cross-region latency problem recorded under
   validation, alerts, spacing and pending states cannot drift between modules.
 
 **Tests** — [docs/TESTING.md](docs/TESTING.md)
-- 73 `vitest` tests in 9 files running the real `src/lib` modules against a
+- 119 `vitest` tests in 12 files running the real `src/lib` modules against a
   throwaway Neon branch. Nothing in `src/` is mocked; no database call is
   faked. Five request-scoped modules are stubbed because they cannot exist
   outside a request, and the reason for each is at the top of
@@ -342,7 +364,7 @@ That run surfaced the cross-region latency problem recorded under
   the geofence circle and the live counters. Route playback and clustering at
   scale are still only exercised by the code behind them — one device on one
   short track is not a crowd.
-- **There is now a test suite, and what it does not cover is the risk.** 73
+- **There is now a test suite, and what it does not cover is the risk.** 119
   tests (`npm test`) run the real `src/lib` modules against a throwaway Neon
   branch — see [docs/TESTING.md](docs/TESTING.md). They pin the four defects
   of 2026-11-07, each confirmed by reverting its fix and watching the test go

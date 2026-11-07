@@ -2,7 +2,8 @@ import "server-only";
 import { getDb } from "./db";
 import { getSettings } from "./settings";
 import { evaluateFence, type Geofence, type Point } from "./geo";
-import { isoDate, zonedToInstant } from "./utils";
+import { expectedForDay, graceFor, shiftMinutes, type Shift } from "./work-pattern";
+import { addDays, isoDate, weekdayOf, zonedToInstant } from "./utils";
 import type { TenantSettings } from "./types";
 
 export type AttendanceRow = {
@@ -32,9 +33,13 @@ export type AttendanceRow = {
 export function computeLateMinutes(
   checkInAt: Date,
   settings: TenantSettings,
-  timeZone: string
+  timeZone: string,
+  shift: Shift | null = null
 ): number {
-  const [h, m] = settings.work_start_time.split(":").map(Number);
+  // The shift's own start, when the person is on one. Without this a night
+  // shift beginning at 22:00 is thirteen hours late against a 09:00 company
+  // default, every single night.
+  const [h, m] = (shift?.start_time ?? settings.work_start_time).split(":").map(Number);
   // "Work starts at 09:00" means nine where the office is. Building the
   // expected moment with setHours would read the server's clock instead --
   // UTC on Vercel -- and mark a Dhaka office six hours late every morning.
@@ -44,7 +49,7 @@ export function computeLateMinutes(
     ).padStart(2, "0")}`,
     timeZone
   );
-  const grace = settings.grace_minutes * 60_000;
+  const grace = graceFor(shift, settings) * 60_000;
   return Math.max(
     0,
     Math.round((checkInAt.getTime() - startOfShift.getTime() - grace) / 60_000)
@@ -57,18 +62,24 @@ export function computeWorkedMinutes(checkInAt: Date, checkOutAt: Date): number 
 
 export function computeOvertimeMinutes(
   workedMinutes: number,
-  settings: TenantSettings
+  settings: TenantSettings,
+  shift: Shift | null = null
 ): number {
-  return Math.max(0, workedMinutes - settings.overtime_after_minutes);
+  // Somebody on a six-hour shift earns overtime after six hours, not after
+  // the company's eight.
+  const threshold = shift ? shiftMinutes(shift) : settings.overtime_after_minutes;
+  return Math.max(0, workedMinutes - threshold);
 }
 
 export function resolveStatus(
   workedMinutes: number,
   lateMinutes: number,
-  settings: TenantSettings
+  settings: TenantSettings,
+  shift: Shift | null = null
 ): string {
   if (workedMinutes === 0) return "absent";
-  if (workedMinutes < settings.standard_work_minutes / 2) return "half_day";
+  const fullDay = shift ? shiftMinutes(shift) : settings.standard_work_minutes;
+  if (workedMinutes < fullDay / 2) return "half_day";
   return lateMinutes > 0 ? "late" : "present";
 }
 
@@ -239,6 +250,181 @@ export async function monthlyAttendanceTotals(
     absent_days: number;
     overtime_minutes: number;
   }[];
+}
+
+/* --- the timesheet -------------------------------------------------------- */
+
+export type TimesheetDay = {
+  date: string;
+  weekday: number;
+  /** Whether this person was meant to work at all. */
+  working: boolean;
+  holidayName: string | null;
+  expectedMinutes: number;
+  workedMinutes: number;
+  overtimeMinutes: number;
+  lateMinutes: number;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  leaveType: string | null;
+  /**
+   * present | late | half_day | absent | on_leave | holiday | rest_day |
+   * scheduled (a working day that has not happened yet).
+   */
+  status: string;
+};
+
+export type Timesheet = {
+  days: TimesheetDay[];
+  shiftName: string | null;
+  totals: {
+    expectedMinutes: number;
+    workedMinutes: number;
+    overtimeMinutes: number;
+    lateMinutes: number;
+    balanceMinutes: number;
+    workingDays: number;
+    presentDays: number;
+    absentDays: number;
+    leaveDays: number;
+    restDays: number;
+  };
+};
+
+/**
+ * One person's expected-versus-actual hours, day by day.
+ *
+ * This is the screen the shift configuration exists for. Until it was built,
+ * "My attendance" listed only the days somebody checked in, so a month with
+ * four missed days looked exactly like a month with none — the absences were
+ * invisible because they had no row. A timesheet has to start from the
+ * calendar and ask what happened on each day, not start from the records.
+ *
+ * Expected minutes come from the person's shift, or the company default when
+ * they have none, and a rest day or public holiday expects zero — which is
+ * what keeps a weekend out of the shortfall. Days after today are marked
+ * `scheduled` and left out of every total, so the balance on the 10th of the
+ * month is not twenty days in deficit.
+ *
+ * The per-day totals are summed in JavaScript rather than SQL, against this
+ * project's usual rule. The rule is there to stop a query pulling thousands
+ * of rows back to count them; here the rows are the output — every one is
+ * rendered — and the expected side depends on shift arithmetic (the midnight
+ * wrap, the unpaid break, the work_days set) that would have to be
+ * reimplemented in SQL to move the sum there.
+ */
+export async function timesheet(
+  tenantId: string,
+  userId: string,
+  from: string,
+  to: string,
+  settings: TenantSettings,
+  shift: Shift | null,
+  timeZone: string
+): Promise<Timesheet> {
+  const db = await getDb();
+  const [records, leave, holidays] = await Promise.all([
+    db`
+      SELECT work_date, check_in_at, check_out_at, worked_minutes,
+             overtime_minutes, late_minutes, status
+        FROM attendance_records
+       WHERE tenant_id = ${tenantId} AND user_id = ${userId}
+         AND work_date BETWEEN ${from} AND ${to}
+    `,
+    db`
+      SELECT lr.start_date, lr.end_date, lt.name AS leave_type
+        FROM leave_requests lr
+        JOIN leave_types lt ON lt.id = lr.leave_type_id
+       WHERE lr.tenant_id = ${tenantId} AND lr.user_id = ${userId}
+         AND lr.status = 'approved'
+         AND lr.start_date <= ${to} AND lr.end_date >= ${from}
+    `,
+    db`
+      SELECT holiday_date, name FROM holidays
+       WHERE tenant_id = ${tenantId} AND holiday_date BETWEEN ${from} AND ${to}
+    `,
+  ]);
+
+  const byDate = new Map(
+    (records as unknown as AttendanceRow[]).map((r) => [r.work_date, r])
+  );
+  const holidayByDate = new Map(
+    (holidays as unknown as { holiday_date: string; name: string }[]).map((h) => [
+      h.holiday_date,
+      h.name,
+    ])
+  );
+  // A leave request is a range, so it is expanded onto the days it covers
+  // rather than looked up by start date.
+  const leaveByDate = new Map<string, string>();
+  for (const l of leave as unknown as {
+    start_date: string;
+    end_date: string;
+    leave_type: string;
+  }[]) {
+    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) {
+      if (d >= from && d <= to) leaveByDate.set(d, l.leave_type);
+    }
+  }
+
+  const today = isoDate(timeZone);
+  const days: TimesheetDay[] = [];
+
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const expected = expectedForDay(d, shift, settings);
+    const rec = byDate.get(d);
+    const holidayName = holidayByDate.get(d) ?? null;
+    const leaveType = leaveByDate.get(d) ?? null;
+    const working = expected.working && !holidayName;
+
+    let status: string;
+    if (holidayName) status = "holiday";
+    else if (!expected.working) status = "rest_day";
+    else if (leaveType) status = "on_leave";
+    else if (rec) status = rec.status;
+    else if (d > today) status = "scheduled";
+    else status = "absent";
+
+    days.push({
+      date: d,
+      weekday: weekdayOf(d),
+      working,
+      holidayName,
+      // A day on approved leave was still a working day, but nothing is owed
+      // for it — the leave balance has already paid for it.
+      expectedMinutes: working && !leaveType ? expected.minutes : 0,
+      workedMinutes: rec?.worked_minutes ?? 0,
+      overtimeMinutes: rec?.overtime_minutes ?? 0,
+      lateMinutes: rec?.late_minutes ?? 0,
+      checkInAt: rec?.check_in_at ?? null,
+      checkOutAt: rec?.check_out_at ?? null,
+      leaveType,
+      status,
+    });
+  }
+
+  // Only days that have happened count towards the balance.
+  const settled = days.filter((d) => d.date <= today);
+  const sum = (pick: (d: TimesheetDay) => number) => settled.reduce((s, d) => s + pick(d), 0);
+  const expectedMinutes = sum((d) => d.expectedMinutes);
+  const workedMinutes = sum((d) => d.workedMinutes);
+
+  return {
+    days,
+    shiftName: shift?.name ?? null,
+    totals: {
+      expectedMinutes,
+      workedMinutes,
+      overtimeMinutes: sum((d) => d.overtimeMinutes),
+      lateMinutes: sum((d) => d.lateMinutes),
+      balanceMinutes: workedMinutes - expectedMinutes,
+      workingDays: settled.filter((d) => d.working).length,
+      presentDays: settled.filter((d) => ["present", "late", "half_day"].includes(d.status)).length,
+      absentDays: settled.filter((d) => d.status === "absent").length,
+      leaveDays: settled.filter((d) => d.status === "on_leave").length,
+      restDays: settled.filter((d) => ["rest_day", "holiday"].includes(d.status)).length,
+    },
+  };
 }
 
 /** Re-exported so actions do not need a second import for the formula inputs. */

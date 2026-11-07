@@ -199,6 +199,18 @@ export function addDays(day: string, n: number): string {
   return at.toISOString().slice(0, 10);
 }
 
+/**
+ * Which day of the week a calendar day falls on — 0 = Sunday, the numbering
+ * `tenant_settings.weekend_days` and `shifts.work_days` are both written for.
+ *
+ * No time zone is applied, and none should be: which weekday 2026-11-07 is
+ * does not depend on where you stand. Reading it through a zone is how a
+ * Friday becomes a Thursday for a tenant west of the server.
+ */
+export function weekdayOf(day: string): number {
+  return new Date(`${day}T00:00:00Z`).getUTCDay();
+}
+
 /** The instant a calendar day begins where the company is. */
 export function dayStart(day: string, timeZone: string): string {
   return zonedToInstant(`${day}T00:00`, timeZone).toISOString();

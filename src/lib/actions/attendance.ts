@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { audit } from "@/lib/audit";
 import { isoDate, zonedToInstant } from "@/lib/utils";
+import { shiftForUser } from "@/lib/shifts";
 import {
   computeLateMinutes,
   computeOvertimeMinutes,
@@ -77,7 +78,8 @@ export async function checkInAction(
   }
 
   const now = new Date();
-  const lateMinutes = computeLateMinutes(now, settings, user.tenant.timezone);
+  const shift = await shiftForUser(user.tenant_id, user.id);
+  const lateMinutes = computeLateMinutes(now, settings, user.tenant.timezone, shift);
   const status = lateMinutes > 0 ? "late" : "present";
 
   await db`
@@ -140,9 +142,10 @@ export async function checkOutAction(
   if (record.check_out_at) return { error: "You have already checked out today." };
 
   const now = new Date();
+  const shift = await shiftForUser(user.tenant_id, user.id);
   const worked = computeWorkedMinutes(new Date(record.check_in_at), now);
-  const overtime = computeOvertimeMinutes(worked, settings);
-  const status = resolveStatus(worked, record.late_minutes, settings);
+  const overtime = computeOvertimeMinutes(worked, settings, shift);
+  const status = resolveStatus(worked, record.late_minutes, settings, shift);
 
   await db`
     UPDATE attendance_records
@@ -225,9 +228,11 @@ export async function manualAttendanceAction(
   const zone = user.tenant.timezone;
   const inAt = d.checkIn ? zonedToInstant(`${d.workDate}T${d.checkIn}`, zone) : null;
   const outAt = d.checkOut ? zonedToInstant(`${d.workDate}T${d.checkOut}`, zone) : null;
+  // The shift of the person the row is *for*, not of the HR user typing it.
+  const shift = await shiftForUser(user.tenant_id, d.userId);
   const worked = inAt && outAt ? computeWorkedMinutes(inAt, outAt) : 0;
-  const overtime = computeOvertimeMinutes(worked, settings);
-  const late = inAt ? computeLateMinutes(inAt, settings, user.tenant.timezone) : 0;
+  const overtime = computeOvertimeMinutes(worked, settings, shift);
+  const late = inAt ? computeLateMinutes(inAt, settings, user.tenant.timezone, shift) : 0;
 
   await db`
     INSERT INTO attendance_records

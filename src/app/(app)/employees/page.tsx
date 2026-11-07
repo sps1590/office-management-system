@@ -10,11 +10,20 @@ import {
   pickableUsers,
 } from "@/lib/employees";
 import { createDepartmentAction } from "@/lib/actions/employees";
+import { importEmployeesAction } from "@/lib/actions/import";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { RowBars } from "@/components/charts";
 import FilterBar from "@/components/FilterBar";
 import AutoForm from "@/components/forms/AutoForm";
+import CsvImport from "@/components/forms/CsvImport";
 import { formatDate } from "@/lib/utils";
+
+/*
+   Importing hashes a bcrypt password per new account, about 60-130ms each, so
+   a file of two hundred needs well past the default budget. The importer caps
+   the file at two hundred rows; this gives those rows somewhere to finish.
+*/
+export const maxDuration = 60;
 
 export const metadata: Metadata = { title: "Employees" };
 
@@ -215,6 +224,41 @@ export default async function EmployeesPage({
               </div>
             )}
           </Card>
+
+          {hasPermission(user, "employees", "create") && (
+            <Card title="Import from a spreadsheet">
+              <CsvImport
+                action={importEmployeesAction}
+                templateHref="/api/templates/employees"
+                templateLabel="Download employee template"
+                submitLabel="Import employees"
+                note={
+                  <>
+                    Up to 200 rows at a time. Only <strong>full_name</strong> and{" "}
+                    <strong>email</strong> are required — an employee code is generated
+                    when the column is blank. Department, role and shift are matched by
+                    name, and a line manager by email, so a manager listed further down
+                    the same file still resolves.
+                  </>
+                }
+              >
+                <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="createMissing"
+                    className="mt-0.5 size-4 rounded border-border accent-primary"
+                  />
+                  <span>
+                    Create departments that do not exist yet
+                    <span className="block text-xs text-fg-subtle">
+                      Off by default, so a misspelt department is reported rather than
+                      quietly created alongside the real one.
+                    </span>
+                  </span>
+                </label>
+              </CsvImport>
+            </Card>
+          )}
 
           <Card title="Access roles" bodyClassName="p-0">
             <ul className="divide-y divide-border">

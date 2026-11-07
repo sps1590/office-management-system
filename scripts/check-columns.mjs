@@ -44,6 +44,12 @@ for (const file of await walk(SCHEMA_DIR)) {
       const col = line.split(/\s+/)[0];
       if (/^[a-z_][a-z0-9_]*$/.test(col)) cols.add(col);
     }
+    // Merged, never replaced: the files are walked alphabetically, so an
+    // `ALTER TABLE users ADD COLUMN` living in hr.ts is read before the
+    // `CREATE TABLE users` in identity.ts. Overwriting here dropped that
+    // column again and reported every query using it as a typo.
+    const existing = tables.get(table);
+    if (existing) for (const c of existing) cols.add(c);
     tables.set(table, cols);
   }
 

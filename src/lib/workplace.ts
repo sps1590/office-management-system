@@ -1,7 +1,15 @@
 import "server-only";
 import { getDb } from "./db";
 import { getSettings } from "./settings";
-import { addDays, calendarBounds, formatTime, instantToZoned, isoDate, zonedToInstant } from "./utils";
+import {
+  addDays,
+  calendarBounds,
+  formatTime,
+  instantToZoned,
+  isoDate,
+  weekdayOf,
+  zonedToInstant,
+} from "./utils";
 
 /* --- rooms ---------------------------------------------------------------- */
 
@@ -81,9 +89,6 @@ export type FreeSlot = {
 
 const SEARCH_DAYS = 7;
 const MIN_SLOT_MINUTES = 15;
-
-/** 0 = Sunday, the numbering `weekend_days` default [5, 6] was written for. */
-const weekdayOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
 
 const clock = (minutes: number) =>
   `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;

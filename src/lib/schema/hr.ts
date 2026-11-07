@@ -198,4 +198,38 @@ export const HR_SCHEMA: string[] = [
   `ALTER TABLE payslips DROP CONSTRAINT IF EXISTS payslips_status_check`,
   `ALTER TABLE payslips ADD CONSTRAINT payslips_status_check
      CHECK (status IN ('draft','approved','paid'))`,
+
+  // A named working pattern. tenant_settings already carries a company-wide
+  // work_start_time, standard_work_minutes and weekend_days; a shift is an
+  // *override* of those for the people assigned to it, not a replacement, so
+  // a company that runs one pattern never has to create a shift at all.
+  //
+  // work_days is 0 = Sunday, matching JavaScript's getDay() and the numbering
+  // tenant_settings.weekend_days was written for. A shift created from the
+  // settings screen seeds it as the inverse of weekend_days.
+  //
+  // end_time <= start_time means the shift crosses midnight (22:00 -> 06:00);
+  // expectedMinutes in shifts.ts handles the wrap rather than returning a
+  // negative day.
+  `CREATE TABLE IF NOT EXISTS shifts (
+     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+     name          TEXT NOT NULL,
+     start_time    TIME NOT NULL DEFAULT '09:00',
+     end_time      TIME NOT NULL DEFAULT '17:00',
+     break_minutes INTEGER NOT NULL DEFAULT 60,
+     work_days     INTEGER[] NOT NULL DEFAULT ARRAY[0,1,2,3,4],
+     -- NULL means "use the company's grace_minutes", so a shift that does not
+     -- care about lateness differently needs no value at all.
+     grace_minutes INTEGER,
+     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+     UNIQUE (tenant_id, name),
+     CONSTRAINT shifts_break_check CHECK (break_minutes >= 0 AND break_minutes < 1440)
+   )`,
+
+  // ON DELETE SET NULL, not CASCADE: deleting a shift must never delete the
+  // people working it. They fall back to the company default.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS shift_id UUID
+     REFERENCES shifts(id) ON DELETE SET NULL`,
 ];

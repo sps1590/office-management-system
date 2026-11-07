@@ -3,6 +3,107 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-07 — Bulk import, working patterns and a real timesheet
+
+Three things that a company onboarding its staff needs on day one: a way to
+load the directory from a spreadsheet, a way to set everybody's annual leave
+without typing it person by person, and a working week the timesheet actually
+knows about.
+
+### Spreadsheet import
+
+`/employees` and `/leave` each download a CSV template and take it back
+filled in. Both are generated from the company's own data rather than being
+static files — the employee template's single example row carries that
+company's first department, role and shift, so the file documents its own
+valid values; the leave sheet comes out with one row per active employee and
+one column per leave category, every cell already holding what that person is
+entitled to. The second is an edit, not a transcription.
+
+Decisions worth recording:
+
+- **CSV, not XLSX.** Excel opens CSV natively and writes it back, and the
+  whole requirement is a round trip. A real `.xlsx` writer is a dependency
+  and a zip container; `src/lib/csv.ts` is eighty lines and handles the three
+  things that actually break the round trip — RFC 4180 quoting, CRLF, and the
+  byte-order mark without which Excel on Windows renders Bengali names as
+  mojibake.
+- **Bad rows do not sink good ones.** An import that refuses the whole file
+  over one bad cell makes somebody bisect their own spreadsheet. Valid rows
+  are written; the rest come back by the line number Excel shows.
+- **A blank leave cell is not a zero.** Blank means "leave this category
+  alone". Reading it as zero would silently strip an entitlement the
+  administrator never intended to touch, and the distinction has its own test.
+- **200 rows per file.** Each new account costs a bcrypt hash at cost 10,
+  measured at 64 ms locally and expected nearer 130 ms on `sin1`, so the cap
+  is what fits inside the 60-second `maxDuration` now set on `/employees`.
+- **Employee codes are drawn as a block.** `nextDocNumbers` advances the
+  counter once by `count`, so a file of two hundred costs one round trip to
+  Singapore rather than two hundred — and still cannot collide with the
+  admin's `EMP-00001`.
+- **Line managers resolve in a second pass**, after the insert, because a
+  file that onboards a department usually names a manager who is in the same
+  file and has no id until then.
+- **Departments are only created on request.** A tickbox, off by default: a
+  misspelt department is reported rather than quietly created alongside the
+  real one.
+
+### Working week and shifts
+
+`tenant_settings.weekend_days` existed since the first schema and nothing had
+ever read it except room booking. The settings screen now sets it — by asking
+the clearer question, which days the company *works*, and storing the
+complement — and a new `shifts` table overrides it per person: start, end,
+unpaid break, working days, optional grace. A shift ending at or before its
+start crosses midnight and counts as its real length, so 22:00–06:00 is eight
+hours rather than minus sixteen.
+
+The attendance formula now takes the person's shift. Without it, anyone on a
+night shift was marked thirteen hours late against the company's 09:00, every
+night. Deleting a shift is `ON DELETE SET NULL`, so the people on it fall back
+to the company default rather than losing their accounts.
+
+### The timesheet
+
+`/me` listed only the days somebody had checked in, which meant a month with
+four missed days looked exactly like a month with none — the absences were
+invisible because they had no row. The new timesheet starts from the calendar
+and asks what happened on each day: expected against worked, late, overtime,
+a running balance, and a status for every day including the ones with no
+record. Rest days, public holidays and approved leave expect nothing, so they
+never show as a shortfall, and days still to come are left out of the totals
+entirely — otherwise the 10th of the month would read as twenty days in
+deficit. The `holidays` table, which had been carried since the first schema
+and read by nothing, is finally wired in.
+
+### Also
+
+- `scripts/check-columns.mjs` had a real ordering bug: schema files are walked
+  alphabetically, so an `ALTER TABLE users ADD COLUMN` in `hr.ts` was read
+  before `CREATE TABLE users` in `identity.ts`, and the CREATE then *replaced*
+  the column set instead of merging into it. It reported every query using the
+  new column as a typo. Fixed by merging.
+- `weekdayOf` was a private const in `workplace.ts`; it is now in `utils.ts`,
+  since shifts and the timesheet need the same 0-=-Sunday numbering and two
+  copies of that would eventually disagree.
+- `src/lib/work-pattern.ts` holds the pure shift arithmetic and `shifts.ts`
+  the queries, because the day picker renders in a browser and a module
+  marked `server-only` cannot be imported from a client component at all.
+
+### Tests
+
+46 new tests, bringing the suite to **119 in 12 files**. Each of the six
+guards below was reverted and watched to fail before being restored:
+
+| Reverted | Tests that went red |
+|---|---|
+| A rest day expects a full day | 1 |
+| The timesheet bills rest days and leave | 2 |
+| The timesheet counts days that have not happened | 1 |
+| A blank leave cell is read as zero | 1 |
+| The in-file duplicate-email check is dropped | 1 (and the whole insert throws) |
+| A midnight-crossing shift is not wrapped | 3 |
+
 ## 2026-11-07 — A password can be reset again
 
 A company admin can now reset another user's password from `/users`. It shows

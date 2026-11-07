@@ -9,18 +9,20 @@ import { getDb } from "./db";
  * get different numbers. A `SELECT MAX(...) + 1` would not: both would read
  * the same maximum.
  */
+export type DocKind =
+  | "po"
+  | "invoice"
+  | "bill"
+  | "expense"
+  | "asset"
+  | "employee"
+  | "vendor"
+  | "client"
+  | "visitor";
+
 export async function nextDocNumber(
   tenantId: string,
-  kind:
-    | "po"
-    | "invoice"
-    | "bill"
-    | "expense"
-    | "asset"
-    | "employee"
-    | "vendor"
-    | "client"
-    | "visitor",
+  kind: DocKind,
   prefix: string
 ): Promise<string> {
   const db = await getDb();
@@ -35,4 +37,36 @@ export async function nextDocNumber(
   // value having reserved the previous one. Either way, subtract one.
   const used = (rows[0] as { next_value: number }).next_value - 1;
   return `${prefix}-${String(used).padStart(5, "0")}`;
+}
+
+/**
+ * Reserves a contiguous block of `count` numbers in one statement.
+ *
+ * A bulk import of two hundred employees would otherwise make two hundred
+ * round trips to Singapore just to name them. Advancing the counter once by
+ * `count` is as atomic as advancing it by one — a second importer racing this
+ * one gets the block above, never an overlapping range.
+ */
+export async function nextDocNumbers(
+  tenantId: string,
+  kind: DocKind,
+  prefix: string,
+  count: number
+): Promise<string[]> {
+  if (count <= 0) return [];
+  const db = await getDb();
+  const rows = await db`
+    INSERT INTO doc_sequences (tenant_id, kind, next_value)
+    VALUES (${tenantId}, ${kind}, ${count + 1})
+    ON CONFLICT (tenant_id, kind)
+      DO UPDATE SET next_value = doc_sequences.next_value + ${count}
+    RETURNING next_value
+  `;
+  // next_value now points past the block, so the block starts `count` back.
+  const after = (rows[0] as { next_value: number }).next_value;
+  const first = after - count;
+  return Array.from(
+    { length: count },
+    (_, i) => `${prefix}-${String(first + i).padStart(5, "0")}`
+  );
 }

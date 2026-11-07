@@ -5,33 +5,71 @@ import { requireUser } from "@/lib/auth";
 import { getEmployee } from "@/lib/employees";
 import { leaveBalances } from "@/lib/leave";
 import { myPayslips } from "@/lib/payroll";
-import { attendanceRange } from "@/lib/attendance";
+import { timesheet } from "@/lib/attendance";
+import { getSettings } from "@/lib/settings";
+import { shiftForUser } from "@/lib/shifts";
+import { DAY_NAMES, shiftMinutes, workDaysLabel } from "@/lib/work-pattern";
 import { changePasswordAction } from "@/lib/actions/employees";
 import AutoForm from "@/components/forms/AutoForm";
 import { Avatar, Card, Field, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
-import { duration, formatDate, isoDate, money, monthName, num } from "@/lib/utils";
+import { addDays, duration, formatDate, isoDate, money, monthName, num } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "My profile" };
 
-export default async function MyProfilePage() {
+export default async function MyProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
   const user = await requireUser();
   const tz = user.tenant.timezone;
-  const year = Number(isoDate(tz).slice(0, 4));
-  const from = new Date();
-  from.setDate(from.getDate() - 29);
+  const today = isoDate(tz);
+  const year = Number(today.slice(0, 4));
+  const sp = await searchParams;
 
-  const [profile, balances, payslips, attendance] = await Promise.all([
+  /*
+     A timesheet is a monthly artefact, so the period is a calendar month in
+     the company's zone -- not a rolling thirty days, which never lines up
+     with the month somebody is actually being paid for. `?month=YYYY-MM`
+     looks back; anything else falls to the current one.
+  */
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? "") ? (sp.month as string) : today.slice(0, 7);
+  const from = `${month}-01`;
+  // The 1st of next month, minus a day. Derived rather than looked up in a
+  // table of month lengths, so February and leap years need no special case.
+  const [my, mm] = month.split("-").map(Number);
+  const nextMonth = mm === 12 ? `${my + 1}-01-01` : `${my}-${String(mm + 1).padStart(2, "0")}-01`;
+  const to = addDays(nextMonth, -1);
+
+  const settings = await getSettings(user.tenant_id);
+  const shift = await shiftForUser(user.tenant_id, user.id);
+
+  const [profile, balances, payslips, sheet] = await Promise.all([
     getEmployee(user.tenant_id, user.id),
     leaveBalances(user.tenant_id, user.id, year),
     myPayslips(user.tenant_id, user.id),
-    attendanceRange(user.tenant_id, user.id, isoDate(tz, from), isoDate(tz)),
+    timesheet(user.tenant_id, user.id, from, to, settings, shift, tz),
   ]);
 
   const currency = user.tenant.currency;
-
-  const present = attendance.filter((a) => ["present", "late"].includes(a.status)).length;
-  const overtime = attendance.reduce((s, a) => s + a.overtime_minutes, 0);
+  const totals = sheet.totals;
   const latestPayslip = payslips[0];
+
+  const patternHours = shift ? shiftMinutes(shift) : settings.standard_work_minutes;
+  const patternDays = shift
+    ? workDaysLabel(shift.work_days)
+    : workDaysLabel([0, 1, 2, 3, 4, 5, 6].filter((d) => !(settings.weekend_days ?? []).includes(d)));
+  const startsAt = (shift?.start_time ?? settings.work_start_time).slice(0, 5);
+  // Month navigation: one step back is always offered, one step forward only
+  // when there is a month to go forward to.
+  const step = (n: number) => {
+    const m = mm + n;
+    const y = my + Math.floor((m - 1) / 12);
+    const wrapped = ((m - 1) % 12 + 12) % 12 + 1;
+    return `${y}-${String(wrapped).padStart(2, "0")}`;
+  };
+  const earlier = step(-1);
+  const later = month < today.slice(0, 7) ? step(1) : null;
 
   return (
     <>
@@ -43,8 +81,17 @@ export default async function MyProfilePage() {
       </PageHeader>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Present, last 30 days" value={present} tone="success" />
-        <KpiCard label="Overtime, last 30 days" value={duration(overtime)} />
+        <KpiCard
+          label="Hours this month"
+          value={duration(totals.workedMinutes)}
+          sub={`of ${duration(totals.expectedMinutes)} expected`}
+          tone={totals.balanceMinutes >= 0 ? "success" : "warning"}
+        />
+        <KpiCard
+          label={totals.balanceMinutes >= 0 ? "Ahead by" : "Short by"}
+          value={duration(Math.abs(totals.balanceMinutes))}
+          sub={`${totals.presentDays} of ${totals.workingDays} working days`}
+        />
         <KpiCard
           label="Leave remaining"
           value={num(
@@ -176,41 +223,112 @@ export default async function MyProfilePage() {
             )}
           </Card>
 
-          <Card title="My attendance, last 30 days" bodyClassName="p-0">
-            <div className="table-wrap max-h-80 overflow-y-auto scroll-thin">
+          <Card
+            title={`Timesheet — ${monthName(mm)} ${my}`}
+            bodyClassName="p-0"
+            action={
+              <div className="flex items-center gap-1.5">
+                <Link href={`/me?month=${earlier}`} className="btn btn-ghost btn-sm">
+                  ← {monthName(Number(earlier.slice(5)))}
+                </Link>
+                {later && (
+                  <Link href={`/me?month=${later}`} className="btn btn-ghost btn-sm">
+                    {monthName(Number(later.slice(5)))} →
+                  </Link>
+                )}
+              </div>
+            }
+          >
+            <div className="px-5 py-3 border-b border-border flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-fg-muted">
+              <span>
+                <strong className="text-fg">{sheet.shiftName ?? "Company default"}</strong>{" "}
+                · {startsAt}, {duration(patternHours)} a day · {patternDays}
+              </span>
+              {totals.lateMinutes > 0 && <span>Late {duration(totals.lateMinutes)} in total</span>}
+              {totals.overtimeMinutes > 0 && (
+                <span>Overtime {duration(totals.overtimeMinutes)}</span>
+              )}
+              {totals.absentDays > 0 && (
+                <span className="text-warning">
+                  {totals.absentDays} unexplained absence{totals.absentDays === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            <div className="table-wrap max-h-[30rem] overflow-y-auto scroll-thin">
               <table className="data">
                 <thead>
                   <tr>
                     <th>Date</th>
+                    <th>Day</th>
+                    <th className="right">Expected</th>
                     <th className="right">Worked</th>
+                    <th className="right">Late</th>
                     <th className="right">Overtime</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {attendance.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="text-fg-subtle">
-                        Nothing recorded yet.
+                  {sheet.days.map((d) => (
+                    <tr key={d.date} data-muted={!d.working || undefined}>
+                      <td className={d.date === today ? "font-semibold" : undefined}>
+                        {formatDate(d.date, tz)}
+                      </td>
+                      <td className="text-fg-subtle">{DAY_NAMES[d.weekday].slice(0, 3)}</td>
+                      <td className="right text-fg-muted">
+                        {d.expectedMinutes > 0 ? duration(d.expectedMinutes) : "—"}
+                      </td>
+                      <td className="right">
+                        {d.workedMinutes > 0 ? duration(d.workedMinutes) : "—"}
+                      </td>
+                      <td className="right text-fg-muted">
+                        {d.lateMinutes > 0 ? duration(d.lateMinutes) : "—"}
+                      </td>
+                      <td className="right text-fg-muted">
+                        {d.overtimeMinutes > 0 ? duration(d.overtimeMinutes) : "—"}
+                      </td>
+                      <td>
+                        {d.holidayName ? (
+                          <span className="badge badge-neutral" title={d.holidayName}>
+                            {d.holidayName}
+                          </span>
+                        ) : d.leaveType ? (
+                          <span className="badge badge-primary">{d.leaveType}</span>
+                        ) : d.status === "rest_day" ? (
+                          <span className="text-fg-subtle text-xs">Rest day</span>
+                        ) : d.status === "scheduled" ? (
+                          <span className="text-fg-subtle text-xs">—</span>
+                        ) : (
+                          <StatusBadge status={d.status} />
+                        )}
                       </td>
                     </tr>
-                  ) : (
-                    attendance.map((a) => (
-                      <tr key={a.id}>
-                        <td>{formatDate(a.work_date, tz)}</td>
-                        <td className="right">{duration(a.worked_minutes)}</td>
-                        <td className="right">
-                          {a.overtime_minutes > 0 ? duration(a.overtime_minutes) : "—"}
-                        </td>
-                        <td>
-                          <StatusBadge status={a.status} />
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
+                <tfoot>
+                  <tr className="font-semibold border-t-2 border-border">
+                    <td colSpan={2}>
+                      {totals.workingDays} working days
+                      {totals.leaveDays > 0 && `, ${totals.leaveDays} on leave`}
+                    </td>
+                    <td className="right">{duration(totals.expectedMinutes)}</td>
+                    <td className="right">{duration(totals.workedMinutes)}</td>
+                    <td className="right">{duration(totals.lateMinutes)}</td>
+                    <td className="right">{duration(totals.overtimeMinutes)}</td>
+                    <td className={totals.balanceMinutes >= 0 ? "text-success" : "text-warning"}>
+                      {totals.balanceMinutes >= 0 ? "+" : "−"}
+                      {duration(Math.abs(totals.balanceMinutes))}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
+            <p className="help px-5 py-3 border-t border-border">
+              Expected hours come from{" "}
+              {sheet.shiftName ? `the ${sheet.shiftName} shift` : "the company working week"}, set
+              on the company settings screen. Rest days, public holidays and approved leave
+              expect nothing, so they never count against the balance — and days still to
+              come are left out of the totals entirely.
+            </p>
           </Card>
         </div>
       </div>
