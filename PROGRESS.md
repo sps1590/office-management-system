@@ -260,8 +260,10 @@ That run surfaced the cross-region latency problem recorded under
   orders, attendance and audit rows stay undeletable by design.
   **An employee is never deleted**: the only lifecycle change is
   active/inactive, which ends their sessions and keeps every record that
-  references them. A company admin can also set somebody's password
-  directly, or have one generated and shown once.
+  references them. A company admin sets somebody's password, or has one
+  generated and shown once, from a button on their row in the employee
+  directory and in Users & roles, or from their profile — never on their
+  own row.
 - **Forgotten passwords** (added 2026-11-08): sign-in carries a *Forgot
   password?* link. `/forgot-password` emails a one-hour, single-use link
   whose SHA-256 alone is stored; `/reset-password` takes the new password

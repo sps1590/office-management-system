@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ShieldCheck, UserCog } from "lucide-react";
+import { ShieldCheck, UserCheck, UserCog, UserMinus } from "lucide-react";
 import { requireCompanyAdmin } from "@/lib/permissions";
 import { listEmployees, listRoles } from "@/lib/employees";
-import {
-  assignRoleAction,
-  resetUserPasswordAction,
-  setUserStatusAction,
-} from "@/lib/actions/employees";
+import { assignRoleAction, setUserStatusAction } from "@/lib/actions/employees";
+import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
+import SetPasswordDialog from "@/components/forms/SetPasswordDialog";
 import PermissionMatrix from "@/components/forms/PermissionMatrix";
 import { Avatar, Card, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { expandMatrix } from "@/lib/modules";
@@ -75,6 +73,7 @@ export default async function UsersPage({
                   <th>Department</th>
                   <th>Last sign-in</th>
                   <th>Status</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -109,6 +108,37 @@ export default async function UsersPage({
                     </td>
                     <td>
                       <StatusBadge status={u.status} />
+                    </td>
+                    <td>
+                      {/* Never on your own row: a signed-in session changes its
+                          own password at /me, where the current one has to be
+                          entered, and resetting yourself here would turn a
+                          borrowed unlocked laptop into a takeover. */}
+                      {u.id !== user.id && (
+                        <span className="flex items-center gap-0.5">
+                          <SetPasswordDialog userId={u.id} name={u.full_name} />
+                          {u.status === "active" ? (
+                            <ActionButton
+                              action={setUserStatusAction}
+                              values={{ userId: u.id, status: "left" }}
+                              label=""
+                              title={`Mark ${u.full_name} inactive`}
+                              className="btn-ghost btn-icon"
+                              icon={<UserMinus size={14} />}
+                              confirm={`Mark ${u.full_name} inactive? They are signed out everywhere and cannot sign in. Nothing is deleted and you can reverse it.`}
+                            />
+                          ) : (
+                            <ActionButton
+                              action={setUserStatusAction}
+                              values={{ userId: u.id, status: "active" }}
+                              label=""
+                              title={`Make ${u.full_name} active`}
+                              className="btn-ghost btn-icon"
+                              icon={<UserCheck size={14} />}
+                            />
+                          )}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -186,38 +216,6 @@ export default async function UsersPage({
               employee record is never deleted — their attendance, payslips and
               approvals all hang off it — so <em>left</em> is how somebody who has
               gone is recorded, and it can be undone.
-            </p>
-          </Card>
-
-          <Card title="Reset a password">
-            <AutoForm
-              action={resetUserPasswordAction}
-              columns={1}
-              compact
-              submitLabel="Reset password"
-              fields={[
-                {
-                  name: "userId",
-                  label: "User",
-                  type: "select",
-                  required: true,
-                  options: users
-                    .filter((u) => u.id !== user.id)
-                    .map((u) => ({ value: u.id, label: `${u.full_name} — ${u.email}` })),
-                },
-                {
-                  name: "password",
-                  label: "New password",
-                  type: "password",
-                  placeholder: "Leave blank to generate one",
-                },
-              ]}
-            />
-            <p className="help mt-3">
-              Type a password to set one you have agreed with them, or leave it blank
-              and one is generated and shown once. Either way every session they have
-              open is signed out. You cannot reset your own — ask another company
-              admin, so a borrowed unlocked laptop can never take an account over.
             </p>
           </Card>
 

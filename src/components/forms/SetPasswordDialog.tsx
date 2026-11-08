@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { KeyRound, X } from "lucide-react";
 import AutoForm from "./AutoForm";
 import { resetUserPasswordAction } from "@/lib/actions/employees";
+import { cn } from "@/lib/utils";
 
 /**
  * A company admin setting somebody else's password.
@@ -21,9 +22,14 @@ import { resetUserPasswordAction } from "@/lib/actions/employees";
 export default function SetPasswordDialog({
   userId,
   name,
+  /** Omitted, the trigger is an icon-only key, for a table row. */
+  label,
+  className,
 }: {
   userId: string;
   name: string;
+  label?: string;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -37,9 +43,15 @@ export default function SetPasswordDialog({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="btn btn-secondary">
-        <KeyRound size={15} />
-        Set password
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn("btn", className ?? (label ? "btn-secondary" : "btn-ghost btn-icon"))}
+        aria-label={label ? undefined : `Set a password for ${name}`}
+        title={label ? undefined : `Set a password for ${name}`}
+      >
+        <KeyRound size={label ? 15 : 14} />
+        {label}
       </button>
 
       <dialog

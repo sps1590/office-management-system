@@ -32,6 +32,21 @@ Found while testing: `FormData.get` answers `null` for a field that is not
 in the submission, and `null` is not `undefined` to an optional string — so
 a caller that wanted a generated password was refused as invalid. Fixed.
 
+### Where the password control lives
+
+Setting somebody's password is on the row, in both lists an administrator
+actually works from — **Employee directory** and **Users & roles** — beside
+an active/inactive toggle that reads the person's current state. It is also
+on the individual profile. Never on your own row in any of them: a
+signed-in session changes its own password at `/me`, where the current one
+has to be entered.
+
+The old "Reset a password" card in the `/users` sidebar is gone. It did the
+same job through a dropdown you had to find the person in, which is worse
+than a button on their row. The "Account status" card stays, because it
+still offers the distinctions the row toggle does not — *invited*,
+*suspended*, *left*.
+
 ### Edit and delete, everywhere they belong
 
 Departments, leave types, public holidays, clients, rooms, assets,

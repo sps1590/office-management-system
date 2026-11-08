@@ -93,7 +93,11 @@ export default async function EmployeePage({
                 icon={<UserCheck size={15} />}
               />
             )}
-            <SetPasswordDialog userId={employee.id} name={employee.full_name} />
+            <SetPasswordDialog
+              userId={employee.id}
+              name={employee.full_name}
+              label="Set password"
+            />
           </>
         )}
         {hasPermission(user, "employees", "edit") && (

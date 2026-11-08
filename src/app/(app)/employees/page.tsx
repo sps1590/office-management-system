@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, Plus, Trash2, UserPlus, Users } from "lucide-react";
-import { requirePermission, hasPermission } from "@/lib/permissions";
+import { Building2, Plus, Trash2, UserCheck, UserMinus, UserPlus, Users } from "lucide-react";
+import { hasPermission, isCompanyAdmin, requirePermission } from "@/lib/permissions";
 import {
   employeeStats,
   listDepartments,
@@ -12,6 +12,7 @@ import {
 import {
   createDepartmentAction,
   deleteDepartmentAction,
+  setUserStatusAction,
   updateDepartmentAction,
 } from "@/lib/actions/employees";
 import { importEmployeesAction } from "@/lib/actions/import";
@@ -21,6 +22,7 @@ import FilterBar from "@/components/FilterBar";
 import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
 import EditDialog from "@/components/forms/EditDialog";
+import SetPasswordDialog from "@/components/forms/SetPasswordDialog";
 import CsvImport from "@/components/forms/CsvImport";
 import { formatDate } from "@/lib/utils";
 
@@ -57,6 +59,9 @@ export default async function EmployeesPage({
 
   const canCreate = hasPermission(user, "employees", "create");
   const canEdit = hasPermission(user, "employees", "edit");
+  // Passwords and account status are company-admin only, never the
+  // configurable matrix: see requireCompanyAdmin in permissions.ts.
+  const isAdmin = isCompanyAdmin(user);
 
   return (
     <>
@@ -141,6 +146,7 @@ export default async function EmployeesPage({
                     <th>Role</th>
                     <th>Joined</th>
                     <th>Status</th>
+                    {isAdmin && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -173,6 +179,35 @@ export default async function EmployeesPage({
                       <td>
                         <StatusBadge status={e.status} />
                       </td>
+                      {isAdmin && (
+                        <td>
+                          {e.id !== user.id && (
+                            <span className="flex items-center gap-0.5">
+                              <SetPasswordDialog userId={e.id} name={e.full_name} />
+                              {e.status === "active" ? (
+                                <ActionButton
+                                  action={setUserStatusAction}
+                                  values={{ userId: e.id, status: "left" }}
+                                  label=""
+                                  title={`Mark ${e.full_name} inactive`}
+                                  className="btn-ghost btn-icon"
+                                  icon={<UserMinus size={14} />}
+                                  confirm={`Mark ${e.full_name} inactive? They are signed out everywhere and cannot sign in. Nothing is deleted and you can reverse it.`}
+                                />
+                              ) : (
+                                <ActionButton
+                                  action={setUserStatusAction}
+                                  values={{ userId: e.id, status: "active" }}
+                                  label=""
+                                  title={`Make ${e.full_name} active`}
+                                  className="btn-ghost btn-icon"
+                                  icon={<UserCheck size={14} />}
+                                />
+                              )}
+                            </span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
