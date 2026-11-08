@@ -76,6 +76,8 @@ export default function AutoForm({
   columns = 2,
   /** Clears the inputs after a successful submit — right for inline "add" forms. */
   resetOnSuccess = false,
+  /** Called once each time the action succeeds — a dialog closes itself with it. */
+  onSuccess,
   footer,
   compact = false,
 }: {
@@ -86,6 +88,7 @@ export default function AutoForm({
   hidden?: Record<string, string>;
   columns?: 1 | 2 | 3;
   resetOnSuccess?: boolean;
+  onSuccess?: (message: string) => void;
   footer?: React.ReactNode;
   compact?: boolean;
 }) {
@@ -93,7 +96,13 @@ export default function AutoForm({
   const preserved = usePreservedForm(state);
 
   useEffect(() => {
-    if (resetOnSuccess && state?.success) preserved.ref.current?.reset();
+    if (!state?.success) return;
+    if (resetOnSuccess) preserved.ref.current?.reset();
+    onSuccess?.(state.success);
+    // `onSuccess` is deliberately out of the dependency list: an inline arrow
+    // from the parent is a new function every render, and including it would
+    // fire this on every one of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.success, resetOnSuccess, preserved.ref]);
 
   /**

@@ -1,9 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, CircleSlash, Plus, Users, X } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleSlash,
+  PartyPopper,
+  Plus,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { canSeeEveryone, hasPermission, requirePermission } from "@/lib/permissions";
 import {
-  holidaysBetween,
+  listHolidays,
   leaveBalances,
   leaveCalendar,
   leaveStats,
@@ -18,12 +29,17 @@ import {
   cancelLeaveAction,
   createLeaveTypeAction,
   decideLeaveAction,
+  deleteHolidayAction,
+  deleteLeaveTypeAction,
   requestLeaveAction,
+  saveHolidayAction,
+  updateLeaveTypeAction,
 } from "@/lib/actions/leave";
 import { importLeaveAllotmentAction } from "@/lib/actions/import";
 import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
 import CsvImport from "@/components/forms/CsvImport";
+import EditDialog from "@/components/forms/EditDialog";
 import FilterBar from "@/components/FilterBar";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
 import { addDays, formatDate, isoDate, monthName, monthWindow, num, titleCase } from "@/lib/utils";
@@ -42,6 +58,7 @@ export default async function LeavePage({
   const year = Number(today.slice(0, 4));
 
   const seesTeam = canSeeEveryone(user, "leave");
+  const canEditLeave = hasPermission(user, "leave", "edit");
   /*
      The calendar is company-wide, so it sits behind the same boundary as the
      "All leave requests" table: an ordinary employee sees their own requests
@@ -50,7 +67,7 @@ export default async function LeavePage({
   */
   const win = monthWindow(sp.month, today.slice(0, 7));
 
-  const [types, balances, settings, stats, mine, queue, all, calendar, awayToday, holidays] =
+  const [types, balances, settings, stats, mine, queue, all, calendar, awayToday, holidayList] =
     await Promise.all([
       listLeaveTypes(user.tenant_id),
       leaveBalances(user.tenant_id, user.id, year),
@@ -61,7 +78,7 @@ export default async function LeavePage({
       seesTeam ? listLeaveRequests(user.tenant_id, { status: sp.status }) : [],
       seesTeam ? leaveCalendar(user.tenant_id, win.from, win.to) : [],
       seesTeam ? onLeaveToday(user.tenant_id, today) : [],
-      seesTeam ? holidaysBetween(user.tenant_id, win.from, win.to) : [],
+      canEditLeave || seesTeam ? listHolidays(user.tenant_id, win.year) : [],
     ]);
 
   const activeTypes = types.filter((t) => t.is_active);
@@ -310,7 +327,9 @@ export default async function LeavePage({
                 today={today}
                 weekStart={weekStartDay(settings.weekend_days)}
                 weekendDays={settings.weekend_days ?? []}
-                holidays={holidays}
+                holidays={holidayList.filter(
+                  (h) => h.holiday_date >= win.from && h.holiday_date <= win.to
+                )}
                 timeZone={tz}
                 canOpenProfile={hasPermission(user, "employees", "view")}
               />
@@ -503,8 +522,48 @@ export default async function LeavePage({
                       <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: t.color }} />
                       <span className="truncate">{t.name}</span>
                     </span>
-                    <span className="text-fg-subtle tnum shrink-0">
-                      {num(t.annual_quota, 0)} d
+                    <span className="flex items-center gap-0.5 shrink-0">
+                      {!t.is_active && <span className="badge badge-neutral">off</span>}
+                      <span className="text-fg-subtle tnum mr-1">
+                        {num(t.annual_quota, 0)} d
+                      </span>
+                      {canEditLeave && (
+                        <>
+                          <EditDialog
+                            title={`Edit ${t.name}`}
+                            action={updateLeaveTypeAction}
+                            hidden={{ leaveTypeId: t.id }}
+                            fields={[
+                              { name: "name", label: "Name", required: true, defaultValue: t.name },
+                              {
+                                name: "annualQuota",
+                                label: "Days per year",
+                                type: "number",
+                                min: 0,
+                                step: "0.5",
+                                defaultValue: t.annual_quota,
+                              },
+                              { name: "isPaid", label: "Paid leave", type: "checkbox", defaultValue: t.is_paid },
+                              {
+                                name: "isActive",
+                                label: "Active",
+                                type: "checkbox",
+                                defaultValue: t.is_active,
+                                help: "Unticked, it stays on past records but nobody can request it.",
+                              },
+                            ]}
+                          />
+                          <ActionButton
+                            action={deleteLeaveTypeAction}
+                            values={{ id: t.id }}
+                            label=""
+                            title={`Delete ${t.name}`}
+                            className="btn-ghost btn-icon"
+                            icon={<Trash2 size={14} />}
+                            confirm={`Delete the ${t.name} leave type? This only works while nobody has requested it or been given an entitlement.`}
+                          />
+                        </>
+                      )}
                     </span>
                   </li>
                 ))}
@@ -530,7 +589,89 @@ export default async function LeavePage({
             </Card>
           )}
 
-          {hasPermission(user, "leave", "edit") && (
+          {canEditLeave && (
+            <Card title="Public holidays" bodyClassName="p-0">
+              {holidayList.length === 0 ? (
+                <p className="px-5 py-4 text-sm text-fg-subtle">
+                  None set for {win.year}. A day added here owes nobody any hours: it
+                  shows on the calendar above and on every timesheet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {holidayList.map((h) => (
+                    <li
+                      key={h.id}
+                      className="px-5 py-2.5 flex items-center justify-between gap-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium truncate">{h.name}</span>
+                        <span className="block text-xs text-fg-subtle">
+                          {formatDate(h.holiday_date, tz)}
+                          {h.is_recurring ? " · every year" : ""}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-0.5 shrink-0">
+                        <EditDialog
+                          title={`Edit ${h.name}`}
+                          action={saveHolidayAction}
+                          hidden={{ holidayId: h.id }}
+                          fields={[
+                            { name: "name", label: "Name", required: true, defaultValue: h.name },
+                            {
+                              name: "date",
+                              label: "Date",
+                              type: "date",
+                              required: true,
+                              defaultValue: h.holiday_date,
+                            },
+                            {
+                              name: "isRecurring",
+                              label: "Falls on the same date every year",
+                              type: "checkbox",
+                              defaultValue: h.is_recurring,
+                            },
+                          ]}
+                        />
+                        <ActionButton
+                          action={deleteHolidayAction}
+                          values={{ id: h.id }}
+                          label=""
+                          title={`Remove ${h.name}`}
+                          className="btn-ghost btn-icon"
+                          icon={<Trash2 size={14} />}
+                          confirm={`Remove ${h.name} from the company calendar?`}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="px-5 py-4 border-t border-border">
+                <p className="text-[0.8125rem] font-semibold mb-3 flex items-center gap-1.5">
+                  <PartyPopper size={14} />
+                  Add a holiday
+                </p>
+                <AutoForm
+                  action={saveHolidayAction}
+                  columns={1}
+                  compact
+                  resetOnSuccess
+                  submitLabel="Add holiday"
+                  fields={[
+                    { name: "name", label: "Name", required: true, placeholder: "e.g. Victory Day" },
+                    { name: "date", label: "Date", type: "date", required: true },
+                    {
+                      name: "isRecurring",
+                      label: "Falls on the same date every year",
+                      type: "checkbox",
+                    },
+                  ]}
+                />
+              </div>
+            </Card>
+          )}
+
+          {canEditLeave && (
             <Card title="Annual allotment">
               <CsvImport
                 action={importLeaveAllotmentAction}

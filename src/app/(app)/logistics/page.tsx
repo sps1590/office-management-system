@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MapPin, Route, Truck } from "lucide-react";
+import { MapPin, Route, Trash2, Truck } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import {
   listLogisticsRoutes,
@@ -10,6 +10,7 @@ import {
 import { listDrivers, listVehicles } from "@/lib/fleet";
 import {
   createLogisticsRouteAction,
+  deleteLogisticsRouteAction,
   setRouteStatusAction,
 } from "@/lib/actions/procurement";
 import ActionButton from "@/components/ActionButton";
@@ -149,12 +150,23 @@ export default async function LogisticsPage({
                         <td>
                           <span className="flex flex-wrap gap-1.5">
                             {r.status === "planned" && (
-                              <ActionButton
-                                action={setRouteStatusAction}
-                                values={{ routeId: r.id, status: "in_transit" }}
-                                label="Depart"
-                                className="btn-ghost btn-sm"
-                              />
+                              <>
+                                <ActionButton
+                                  action={setRouteStatusAction}
+                                  values={{ routeId: r.id, status: "in_transit" }}
+                                  label="Depart"
+                                  className="btn-ghost btn-sm"
+                                />
+                                <ActionButton
+                                  action={deleteLogisticsRouteAction}
+                                  values={{ id: r.id }}
+                                  label=""
+                                  title="Delete this planned route"
+                                  className="btn-ghost btn-icon"
+                                  icon={<Trash2 size={14} />}
+                                  confirm="Delete this route? Only one that has not departed can be removed."
+                                />
+                              </>
                             )}
                             {r.status === "in_transit" && (
                               <>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, Plus, UserPlus, Users } from "lucide-react";
+import { Building2, Plus, Trash2, UserPlus, Users } from "lucide-react";
 import { requirePermission, hasPermission } from "@/lib/permissions";
 import {
   employeeStats,
@@ -9,12 +9,18 @@ import {
   listRoles,
   pickableUsers,
 } from "@/lib/employees";
-import { createDepartmentAction } from "@/lib/actions/employees";
+import {
+  createDepartmentAction,
+  deleteDepartmentAction,
+  updateDepartmentAction,
+} from "@/lib/actions/employees";
 import { importEmployeesAction } from "@/lib/actions/import";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { RowBars } from "@/components/charts";
 import FilterBar from "@/components/FilterBar";
+import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
+import EditDialog from "@/components/forms/EditDialog";
 import CsvImport from "@/components/forms/CsvImport";
 import { formatDate } from "@/lib/utils";
 
@@ -50,6 +56,7 @@ export default async function EmployeesPage({
   ]);
 
   const canCreate = hasPermission(user, "employees", "create");
+  const canEdit = hasPermission(user, "employees", "edit");
 
   return (
     <>
@@ -192,7 +199,41 @@ export default async function EmployeesPage({
                         {d.head_name ? `Head: ${d.head_name}` : "No head assigned"}
                       </p>
                     </div>
-                    <span className="badge badge-neutral shrink-0">{d.headcount}</span>
+                    <span className="flex items-center gap-1 shrink-0">
+                      <span className="badge badge-neutral">{d.headcount}</span>
+                      {canEdit && (
+                        <>
+                          <EditDialog
+                            title={`Edit ${d.name}`}
+                            action={updateDepartmentAction}
+                            hidden={{ departmentId: d.id }}
+                            fields={[
+                              { name: "name", label: "Name", required: true, defaultValue: d.name },
+                              { name: "code", label: "Code", defaultValue: d.code ?? "" },
+                              {
+                                name: "headUserId",
+                                label: "Department head",
+                                type: "select",
+                                defaultValue: d.head_user_id ?? "",
+                                options: [
+                                  { value: "", label: "Nobody" },
+                                  ...managers.map((m) => ({ value: m.id, label: m.full_name })),
+                                ],
+                              },
+                            ]}
+                          />
+                          <ActionButton
+                            action={deleteDepartmentAction}
+                            values={{ id: d.id }}
+                            label=""
+                            title={`Delete ${d.name}`}
+                            className="btn-ghost btn-icon"
+                            icon={<Trash2 size={14} />}
+                            confirm={`Delete the ${d.name} department? This only works while nothing is filed under it.`}
+                          />
+                        </>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>

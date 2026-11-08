@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AlertTriangle, Boxes, PackageX, Warehouse } from "lucide-react";
+import { AlertTriangle, Boxes, PackageX, Trash2, Warehouse } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import {
   inventoryStats,
@@ -11,8 +11,14 @@ import {
   adjustStockAction,
   createInventoryItemAction,
   createWarehouseAction,
+  deleteInventoryItemAction,
+  deleteWarehouseAction,
+  updateInventoryItemAction,
+  updateWarehouseAction,
 } from "@/lib/actions/procurement";
+import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
+import EditDialog from "@/components/forms/EditDialog";
 import FilterBar from "@/components/FilterBar";
 import { Card, EmptyState, KpiCard, PageHeader, Progress } from "@/components/ui";
 import { compact, formatDateTime, money, num } from "@/lib/utils";
@@ -40,6 +46,7 @@ export default async function InventoryPage({
 
   const canCreate = hasPermission(user, "inventory", "create");
   const canEdit = hasPermission(user, "inventory", "edit");
+  const canEditStock = canEdit;
   const currency = user.tenant.currency;
   const tz = user.tenant.timezone;
 
@@ -112,6 +119,7 @@ export default async function InventoryPage({
                       <th>Level</th>
                       <th className="right">Unit cost</th>
                       <th className="right">Value</th>
+                      {canEditStock && <th></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -146,6 +154,85 @@ export default async function InventoryPage({
                           </td>
                           <td className="right">{money(i.unit_cost, currency)}</td>
                           <td className="right">{money(i.stock_value, currency)}</td>
+                          {canEditStock && (
+                            <td>
+                              <span className="flex items-center gap-0.5">
+                                <EditDialog
+                                  title={`Edit ${i.item_name}`}
+                                  action={updateInventoryItemAction}
+                                  hidden={{ itemId: i.id }}
+                                  columns={2}
+                                  fields={[
+                                    { name: "sku", label: "SKU", required: true, defaultValue: i.sku },
+                                    {
+                                      name: "itemName",
+                                      label: "Item name",
+                                      required: true,
+                                      defaultValue: i.item_name,
+                                    },
+                                    { name: "category", label: "Category", defaultValue: i.category ?? "" },
+                                    { name: "unit", label: "Unit", required: true, defaultValue: i.unit },
+                                    {
+                                      name: "reorderLevel",
+                                      label: "Reorder at",
+                                      type: "number",
+                                      min: 0,
+                                      step: "0.001",
+                                      defaultValue: i.reorder_level,
+                                    },
+                                    {
+                                      name: "reorderQuantity",
+                                      label: "Reorder quantity",
+                                      type: "number",
+                                      min: 0,
+                                      step: "0.001",
+                                      defaultValue: i.reorder_quantity,
+                                    },
+                                    {
+                                      name: "unitCost",
+                                      label: "Unit cost",
+                                      type: "number",
+                                      min: 0,
+                                      step: "0.01",
+                                      defaultValue: i.unit_cost,
+                                    },
+                                    {
+                                      name: "warehouseId",
+                                      label: "Warehouse",
+                                      type: "select",
+                                      defaultValue: i.warehouse_id ?? "",
+                                      options: [
+                                        { value: "", label: "Unassigned" },
+                                        ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+                                      ],
+                                    },
+                                    {
+                                      name: "binLocation",
+                                      label: "Bin location",
+                                      defaultValue: i.bin_location ?? "",
+                                    },
+                                    {
+                                      name: "isActive",
+                                      label: "Active",
+                                      type: "checkbox",
+                                      defaultValue: i.is_active,
+                                      span: 2,
+                                      help: "Stock on hand is changed with a movement, never typed here \u2014 so the running total and its history can never disagree.",
+                                    },
+                                  ]}
+                                />
+                                <ActionButton
+                                  action={deleteInventoryItemAction}
+                                  values={{ id: i.id }}
+                                  label=""
+                                  title={`Delete ${i.item_name}`}
+                                  className="btn-ghost btn-icon"
+                                  icon={<Trash2 size={14} />}
+                                  confirm={`Delete ${i.item_name}? This only works while it has no stock movements or order lines.`}
+                                />
+                              </span>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -284,7 +371,53 @@ export default async function InventoryPage({
                           <Warehouse size={14} className="text-fg-subtle shrink-0" />
                           <span className="truncate">{w.name}</span>
                         </span>
-                        <span className="badge badge-neutral shrink-0">{w.item_count}</span>
+                        <span className="flex items-center gap-0.5 shrink-0">
+                          {!w.is_active && <span className="badge badge-neutral">off</span>}
+                          <span className="badge badge-neutral">{w.item_count}</span>
+                          {canEditStock && (
+                            <>
+                              <EditDialog
+                                title={`Edit ${w.name}`}
+                                action={updateWarehouseAction}
+                                hidden={{ warehouseId: w.id }}
+                                fields={[
+                                  { name: "name", label: "Name", required: true, defaultValue: w.name },
+                                  { name: "code", label: "Code", defaultValue: w.code ?? "" },
+                                  {
+                                    name: "address",
+                                    label: "Address",
+                                    type: "textarea",
+                                    rows: 2,
+                                    defaultValue: w.address ?? "",
+                                  },
+                                  {
+                                    name: "latitude",
+                                    lngName: "longitude",
+                                    label: "Location",
+                                    type: "location",
+                                    defaultValue: w.latitude,
+                                    defaultLng: w.longitude,
+                                  },
+                                  {
+                                    name: "isActive",
+                                    label: "Active",
+                                    type: "checkbox",
+                                    defaultValue: w.is_active,
+                                  },
+                                ]}
+                              />
+                              <ActionButton
+                                action={deleteWarehouseAction}
+                                values={{ id: w.id }}
+                                label=""
+                                title={`Delete ${w.name}`}
+                                className="btn-ghost btn-icon"
+                                icon={<Trash2 size={14} />}
+                                confirm={`Delete ${w.name}? This only works while nothing is stocked or routed there.`}
+                              />
+                            </>
+                          )}
+                        </span>
                       </li>
                     ))
                   )}

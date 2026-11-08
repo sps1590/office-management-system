@@ -1,16 +1,21 @@
 import type { Metadata } from "next";
-import { CheckCircle2, ClipboardList, FolderKanban, Play } from "lucide-react";
+import { CheckCircle2, ClipboardList, FolderKanban, Play, Trash2 } from "lucide-react";
 import { canSeeEveryone, hasPermission, requirePermission } from "@/lib/permissions";
 import { listProjects, listTasks, taskStats } from "@/lib/workplace";
 import { pickableUsers } from "@/lib/employees";
 import {
   createProjectAction,
   createTaskAction,
+  deleteProjectAction,
+  deleteTaskAction,
   setTaskStatusAction,
+  updateProjectAction,
+  updateTaskAction,
 } from "@/lib/actions/workplace";
 import ActionButton from "@/components/ActionButton";
 import GeoActionForm from "@/components/GeoActionForm";
 import AutoForm from "@/components/forms/AutoForm";
+import EditDialog from "@/components/forms/EditDialog";
 import FilterBar from "@/components/FilterBar";
 import { Avatar, Card, EmptyState, KpiCard, PageHeader, Progress, StatusBadge } from "@/components/ui";
 import { formatDate, isoDate, percent } from "@/lib/utils";
@@ -43,6 +48,7 @@ export default async function TasksPage({
   ]);
 
   const canCreate = hasPermission(user, "tasks", "create");
+  const canEditTasks = hasPermission(user, "tasks", "edit");
   const myOpen = mine.filter((t) => !["done", "cancelled"].includes(t.status));
 
   return (
@@ -178,6 +184,7 @@ export default async function TasksPage({
                       <th>Priority</th>
                       <th>Status</th>
                       <th>Proof</th>
+                      {canEditTasks && <th></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -230,6 +237,73 @@ export default async function TasksPage({
                               <span className="text-fg-subtle text-xs">—</span>
                             )}
                           </td>
+                          {canEditTasks && (
+                            <td>
+                              <span className="flex items-center gap-0.5">
+                                <EditDialog
+                                  title="Edit task"
+                                  action={updateTaskAction}
+                                  hidden={{ taskId: t.id }}
+                                  fields={[
+                                    { name: "title", label: "Title", required: true, defaultValue: t.title },
+                                    {
+                                      name: "description",
+                                      label: "Description",
+                                      type: "textarea",
+                                      rows: 3,
+                                      defaultValue: t.description ?? "",
+                                    },
+                                    {
+                                      name: "assignedTo",
+                                      label: "Assigned to",
+                                      type: "select",
+                                      defaultValue: t.assigned_to ?? "",
+                                      options: [
+                                        { value: "", label: "Unassigned" },
+                                        ...people.map((pp) => ({ value: pp.id, label: pp.full_name })),
+                                      ],
+                                    },
+                                    {
+                                      name: "projectId",
+                                      label: "Project",
+                                      type: "select",
+                                      defaultValue: t.project_id ?? "",
+                                      options: [
+                                        { value: "", label: "No project" },
+                                        ...projects.map((pr) => ({ value: pr.id, label: pr.name })),
+                                      ],
+                                    },
+                                    {
+                                      name: "priority",
+                                      label: "Priority",
+                                      type: "select",
+                                      required: true,
+                                      defaultValue: t.priority,
+                                      options: ["low", "medium", "high", "urgent"].map((v) => ({
+                                        value: v,
+                                        label: v,
+                                      })),
+                                    },
+                                    {
+                                      name: "dueDate",
+                                      label: "Due",
+                                      type: "date",
+                                      defaultValue: t.due_date ?? "",
+                                    },
+                                  ]}
+                                />
+                                <ActionButton
+                                  action={deleteTaskAction}
+                                  values={{ id: t.id }}
+                                  label=""
+                                  title="Delete task"
+                                  className="btn-ghost btn-icon"
+                                  icon={<Trash2 size={14} />}
+                                  confirm={`Delete this task and its comments? This cannot be undone.`}
+                                />
+                              </span>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -289,7 +363,74 @@ export default async function TasksPage({
                   <li key={p.id} className="px-5 py-3">
                     <div className="flex items-center justify-between gap-3 mb-1.5">
                       <span className="text-sm font-medium truncate">{p.name}</span>
-                      <StatusBadge status={p.status} />
+                      <span className="flex items-center gap-0.5 shrink-0">
+                        <StatusBadge status={p.status} />
+                        {canEditTasks && (
+                          <>
+                            <EditDialog
+                              title={`Edit ${p.name}`}
+                              action={updateProjectAction}
+                              hidden={{ projectId: p.id }}
+                              fields={[
+                                { name: "name", label: "Name", required: true, defaultValue: p.name },
+                                { name: "code", label: "Code", defaultValue: p.code ?? "" },
+                                {
+                                  name: "status",
+                                  label: "Status",
+                                  type: "select",
+                                  required: true,
+                                  defaultValue: p.status,
+                                  options: [
+                                    "planning",
+                                    "active",
+                                    "on_hold",
+                                    "completed",
+                                    "cancelled",
+                                  ].map((v) => ({ value: v, label: v.replace("_", " ") })),
+                                },
+                                {
+                                  name: "ownerId",
+                                  label: "Owner",
+                                  type: "select",
+                                  defaultValue: p.owner_id ?? "",
+                                  options: [
+                                    { value: "", label: "Nobody" },
+                                    ...people.map((pp) => ({ value: pp.id, label: pp.full_name })),
+                                  ],
+                                },
+                                {
+                                  name: "startDate",
+                                  label: "Starts",
+                                  type: "date",
+                                  defaultValue: p.start_date ?? "",
+                                },
+                                {
+                                  name: "endDate",
+                                  label: "Ends",
+                                  type: "date",
+                                  defaultValue: p.end_date ?? "",
+                                },
+                                {
+                                  name: "description",
+                                  label: "Description",
+                                  type: "textarea",
+                                  rows: 2,
+                                  defaultValue: p.description ?? "",
+                                },
+                              ]}
+                            />
+                            <ActionButton
+                              action={deleteProjectAction}
+                              values={{ id: p.id }}
+                              label=""
+                              title={`Delete ${p.name}`}
+                              className="btn-ghost btn-icon"
+                              icon={<Trash2 size={14} />}
+                              confirm={`Delete ${p.name}? This only works while it has no tasks.`}
+                            />
+                          </>
+                        )}
+                      </span>
                     </div>
                     <Progress value={p.done_count} max={p.task_count || 1} />
                     <p className="mt-1 text-xs text-fg-subtle">

@@ -9,6 +9,7 @@ import { isoDate, zonedToSql } from "@/lib/utils";
 import { nextDocNumber } from "@/lib/sequence";
 import { findFreeSlots, slotLabel } from "@/lib/workplace";
 import { audit, notify } from "@/lib/audit";
+import { countOf, stillInUse } from "@/lib/guards";
 import type { ActionState } from "@/lib/types";
 
 const nullable = (max = 300) =>
@@ -633,4 +634,362 @@ export async function commentOnTaskAction(
   `;
   revalidatePath("/tasks");
   return { success: "Comment added." };
+}
+
+/* --- editing and removing the facilities master data ---------------------- */
+
+export async function updateRoomAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("facilities", "edit");
+  const parsed = z
+    .object({
+      roomId: z.string().uuid(),
+      name: z.string().trim().min(2, "Name is required").max(120),
+      code: nullable(20),
+      floor: nullable(40),
+      capacity: z.coerce.number().int().min(0).max(10_000).default(0),
+      amenities: nullable(300),
+      status: z.enum(["available", "maintenance", "retired"]),
+    })
+    .safeParse({
+      roomId: formData.get("roomId"),
+      name: formData.get("name") ?? "",
+      code: formData.get("code") ?? "",
+      floor: formData.get("floor") ?? "",
+      capacity: formData.get("capacity") || 0,
+      amenities: formData.get("amenities") ?? "",
+      status: formData.get("status") || "available",
+    });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const clash = await db`
+    SELECT 1 FROM rooms
+     WHERE tenant_id = ${user.tenant_id} AND name = ${d.name} AND id <> ${d.roomId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { name: ["Another room already has that name."] } };
+  }
+
+  const amenities = (d.amenities ?? "")
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
+
+  const updated = await db`
+    UPDATE rooms
+       SET name = ${d.name}, code = ${d.code}, floor = ${d.floor},
+           capacity = ${d.capacity}, status = ${d.status},
+           amenities = ${JSON.stringify(amenities)}::jsonb
+     WHERE id = ${d.roomId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Room not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "room.updated",
+    entity: "room",
+    entityId: d.roomId,
+    summary: `Updated room ${d.name}`,
+  });
+  revalidatePath("/rooms");
+  return { success: "Room updated." };
+}
+
+export async function deleteRoomAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("facilities", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  const bookings = await db`
+    SELECT COUNT(*)::int AS n FROM room_bookings
+     WHERE tenant_id = ${user.tenant_id} AND room_id = ${id}
+  `;
+  const blocked = stillInUse(
+    [{ n: countOf(bookings), label: "booking" }],
+    "Set it to retired instead: the bookings stay and nobody can book it again."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM rooms WHERE id = ${id} AND tenant_id = ${user.tenant_id} RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Room not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "room.deleted",
+    entity: "room",
+    entityId: id,
+    summary: `Deleted the never-booked room ${(gone[0] as { name: string }).name}`,
+  });
+  revalidatePath("/rooms");
+  return { success: "Room deleted." };
+}
+
+export async function updateAssetAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("assets", "edit");
+  const parsed = assetSchema.extend({ assetId: z.string().uuid() }).safeParse({
+    assetId: formData.get("assetId"),
+    name: formData.get("name") ?? "",
+    assetTag: formData.get("assetTag") ?? "",
+    category: formData.get("category") ?? "",
+    serialNumber: formData.get("serialNumber") ?? "",
+    assignedTo: formData.get("assignedTo") ?? "",
+    departmentId: formData.get("departmentId") ?? "",
+    purchaseDate: formData.get("purchaseDate") ?? "",
+    purchaseCost: formData.get("purchaseCost") || 0,
+    warrantyExpiry: formData.get("warrantyExpiry") ?? "",
+    condition: formData.get("condition") || "good",
+    location: formData.get("location") ?? "",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const updated = await db`
+    UPDATE assets
+       SET name = ${d.name}, asset_tag = COALESCE(${d.assetTag}, asset_tag),
+           category = ${d.category}, serial_number = ${d.serialNumber},
+           assigned_to = ${d.assignedTo}, department_id = ${d.departmentId},
+           purchase_date = ${d.purchaseDate}, purchase_cost = ${d.purchaseCost},
+           warranty_expiry = ${d.warrantyExpiry}, condition = ${d.condition},
+           location = ${d.location}
+     WHERE id = ${d.assetId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Asset not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "asset.updated",
+    entity: "asset",
+    entityId: d.assetId,
+    summary: `Updated asset ${d.name}`,
+  });
+  revalidatePath("/assets");
+  return { success: "Asset updated." };
+}
+
+export async function deleteAssetAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("assets", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  const assignments = await db`
+    SELECT COUNT(*)::int AS n FROM asset_assignments
+     WHERE tenant_id = ${user.tenant_id} AND asset_id = ${id}
+  `;
+  const blocked = stillInUse(
+    [{ n: countOf(assignments), label: "assignment record" }],
+    "Set it to disposed instead: the custody trail stays, which is the point of keeping one."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM assets WHERE id = ${id} AND tenant_id = ${user.tenant_id} RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Asset not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "asset.deleted",
+    entity: "asset",
+    entityId: id,
+    summary: `Deleted asset ${(gone[0] as { name: string }).name}, which was never assigned`,
+  });
+  revalidatePath("/assets");
+  return { success: "Asset deleted." };
+}
+
+export async function updateProjectAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("tasks", "edit");
+  const parsed = z
+    .object({
+      projectId: z.string().uuid(),
+      name: z.string().trim().min(2, "Project name is required").max(160),
+      code: nullable(20),
+      description: nullable(600),
+      ownerId: nullableUuid,
+      status: z.enum(["planning", "active", "on_hold", "completed", "cancelled"]),
+      startDate: nullableDate,
+      endDate: nullableDate,
+    })
+    .safeParse({
+      projectId: formData.get("projectId"),
+      name: formData.get("name") ?? "",
+      code: formData.get("code") ?? "",
+      description: formData.get("description") ?? "",
+      ownerId: formData.get("ownerId") ?? "",
+      status: formData.get("status") || "active",
+      startDate: formData.get("startDate") ?? "",
+      endDate: formData.get("endDate") ?? "",
+    });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const updated = await db`
+    UPDATE projects
+       SET name = ${d.name}, code = ${d.code}, description = ${d.description},
+           owner_id = ${d.ownerId}, status = ${d.status},
+           start_date = ${d.startDate}, end_date = ${d.endDate}
+     WHERE id = ${d.projectId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Project not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "project.updated",
+    entity: "project",
+    entityId: d.projectId,
+    summary: `Updated project ${d.name}`,
+  });
+  revalidatePath("/tasks");
+  return { success: "Project updated." };
+}
+
+export async function deleteProjectAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("tasks", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  // Tasks detach rather than cascade, so deleting a live project would leave
+  // its work orphaned in the backlog with no sign of where it came from.
+  const tasks = await db`
+    SELECT COUNT(*)::int AS n FROM tasks
+     WHERE tenant_id = ${user.tenant_id} AND project_id = ${id}
+  `;
+  const blocked = stillInUse(
+    [{ n: countOf(tasks), label: "task" }],
+    "Set it to completed or cancelled instead, so its tasks keep their home."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM projects WHERE id = ${id} AND tenant_id = ${user.tenant_id} RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Project not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "project.deleted",
+    entity: "project",
+    entityId: id,
+    summary: `Deleted the empty project ${(gone[0] as { name: string }).name}`,
+  });
+  revalidatePath("/tasks");
+  return { success: "Project deleted." };
+}
+
+export async function updateTaskAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("tasks", "edit");
+  const parsed = taskSchema.extend({ taskId: z.string().uuid() }).safeParse({
+    taskId: formData.get("taskId"),
+    title: formData.get("title") ?? "",
+    description: formData.get("description") ?? "",
+    assignedTo: formData.get("assignedTo") ?? "",
+    projectId: formData.get("projectId") ?? "",
+    priority: formData.get("priority") || "medium",
+    dueDate: formData.get("dueDate") ?? "",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const updated = await db`
+    UPDATE tasks
+       SET title = ${d.title}, description = ${d.description},
+           assigned_to = ${d.assignedTo}, project_id = ${d.projectId},
+           priority = ${d.priority}, due_date = ${d.dueDate}, updated_at = now()
+     WHERE id = ${d.taskId} AND tenant_id = ${user.tenant_id}
+    RETURNING title
+  `;
+  if (updated.length === 0) return { error: "Task not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "task.updated",
+    entity: "task",
+    entityId: d.taskId,
+    summary: `Updated task ${d.title}`,
+  });
+  revalidatePath("/tasks");
+  return { success: "Task updated." };
+}
+
+/**
+ * Deletes a task, and its comments with it.
+ *
+ * The only delete in the product that takes dependent rows down with it,
+ * deliberately: a task is a plan rather than a record of something that
+ * happened, a mistyped one is common, and its comments have no meaning once
+ * the task is gone. Nothing that *is* a record — an attendance row, a field
+ * visit — references a task.
+ */
+export async function deleteTaskAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("tasks", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+
+  const db = await getDb();
+  const gone = await db`
+    DELETE FROM tasks WHERE id = ${id} AND tenant_id = ${user.tenant_id} RETURNING title
+  `;
+  if (gone.length === 0) return { error: "Task not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "task.deleted",
+    entity: "task",
+    entityId: id,
+    summary: `Deleted task ${(gone[0] as { title: string }).title}`,
+  });
+  revalidatePath("/tasks");
+  return { success: "Task deleted." };
 }

@@ -127,7 +127,15 @@ drift stale.
   runtime leak. `work-pattern.ts` holds the arithmetic and `shifts.ts` the
   queries, for exactly this reason.
 - Validate every new action input with `zod`, in a schema declared next to the
-  action. No hand-parsed `FormData`.
+  action. No hand-parsed `FormData`. `formData.get()` answers **null** for a
+  field that is absent, and null is not `undefined` to an `.optional()`
+  string — so an optional input reads `formData.get("x") ?? undefined`, and
+  a required one `?? ""`.
+- **Editing a row in place is `EditDialog`, not a new route.** It is the same
+  `AutoForm` with the record's values as defaults, in the native `<dialog>`,
+  and it closes itself through `AutoForm`'s `onSuccess`. A `/thing/[id]/edit`
+  page is for a record with enough fields to deserve one — an employee — not
+  for a department with three.
 - Colours come from the CSS custom properties in `globals.css` and must work
   in both light and dark themes. No hard-coded hex values in components.
 - New dependencies need a reason recorded in `docs/PLAN.md`. The brief asked
@@ -237,6 +245,22 @@ drift stale.
   `email.ts` has the order; the request host is the development fallback
   only. Anything that depends on delivery checks `emailConfigured()` first
   and fails closed with a message that does not vary by address.
+- **An employee record is never deleted.** There is no `deleteUserAction`
+  and there must not be one: attendance, leave, payslips, approvals and the
+  audit trail all reference the row, and the duty to keep employment records
+  outlives the employment. `setUserStatusAction` is the whole lifecycle —
+  `left` for somebody who has gone, `suspended` for access withdrawn while
+  they are still on the books. Both end their sessions; both are reversible.
+- **A delete counts its dependents before it runs.** Nearly every foreign
+  key here is `ON DELETE CASCADE`, so the database will erase a vehicle's
+  trips or a client's deals on the way to erasing the parent, silently. Each
+  delete action counts first and refuses while anything remains, through
+  `stillInUse()` in `guards.ts`, naming what is in the way *and* the way out
+  — retire it, blacklist it, untick Active. A record with no history is a
+  mistake and can go; a record with history is a fact and is retired. Money
+  and audit rows — invoices, payments, journal entries, payslips, approved
+  orders, attendance, audit logs — are never deletable at all; they are
+  corrected by reversal.
 - **Nobody resets their own password from an admin screen.** `/me` changes a
   password and demands the current one; `resetUserPasswordAction` does not,
   so it refuses when the target is the caller. Without that, anyone who found

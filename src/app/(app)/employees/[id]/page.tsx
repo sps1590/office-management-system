@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Pencil } from "lucide-react";
-import { hasPermission, requirePermission } from "@/lib/permissions";
+import { ArrowLeft, Pencil, UserCheck, UserMinus } from "lucide-react";
+import { hasPermission, isCompanyAdmin, requirePermission } from "@/lib/permissions";
 import { getEmployee } from "@/lib/employees";
 import { attendanceRange } from "@/lib/attendance";
 import { getDb } from "@/lib/db";
+import { setUserStatusAction } from "@/lib/actions/employees";
+import ActionButton from "@/components/ActionButton";
+import SetPasswordDialog from "@/components/forms/SetPasswordDialog";
 import { Avatar, Card, Field, PageHeader, StatusBadge } from "@/components/ui";
 import { duration, formatDate, formatDateTime, formatTime, isoDate, money } from "@/lib/utils";
 
@@ -67,6 +70,32 @@ export default async function EmployeePage({
       </Link>
 
       <PageHeader title={employee.full_name} description={employee.designation ?? undefined}>
+        {isCompanyAdmin(user) && employee.id !== user.id && (
+          <>
+            {/* Active and inactive, and nothing else: an employee record is
+                never deleted, because their attendance, payslips, approvals
+                and audit trail all hang off it. */}
+            {employee.status === "active" ? (
+              <ActionButton
+                action={setUserStatusAction}
+                values={{ userId: employee.id, status: "left" }}
+                label="Mark inactive"
+                className="btn-secondary"
+                icon={<UserMinus size={15} />}
+                confirm={`Mark ${employee.full_name} inactive? They will be signed out everywhere and will not be able to sign in. Nothing is deleted, and you can make them active again at any time.`}
+              />
+            ) : (
+              <ActionButton
+                action={setUserStatusAction}
+                values={{ userId: employee.id, status: "active" }}
+                label="Make active"
+                className="btn-secondary"
+                icon={<UserCheck size={15} />}
+              />
+            )}
+            <SetPasswordDialog userId={employee.id} name={employee.full_name} />
+          </>
+        )}
         {hasPermission(user, "employees", "edit") && (
           <Link href={`/employees/${employee.id}/edit`} className="btn btn-secondary">
             <Pencil size={15} />

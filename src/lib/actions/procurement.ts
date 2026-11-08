@@ -10,6 +10,7 @@ import { getSettings } from "@/lib/settings";
 import { postJournal } from "@/lib/ledger";
 import { nextDocNumber } from "@/lib/sequence";
 import { audit, notify, notifyRoles } from "@/lib/audit";
+import { countOf, stillInUse } from "@/lib/guards";
 import { isoDate, zonedToSql } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
@@ -988,4 +989,322 @@ export async function setRouteStatusAction(
   });
   revalidatePath("/logistics");
   return { success: `Marked ${status.replace(/_/g, " ")}.` };
+}
+
+/* --- removing and editing the supply-chain master data -------------------- */
+
+export async function deleteVendorAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("procurement", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  /*
+     Purchase orders are ON DELETE RESTRICT and bills cascade. A vendor you
+     have ordered from is part of the purchase record, so neither outcome is
+     acceptable: blacklisting is the way to stop using one.
+  */
+  const [orders, bills, maintenance] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM purchase_orders WHERE tenant_id = ${user.tenant_id} AND vendor_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM bills WHERE tenant_id = ${user.tenant_id} AND vendor_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM vehicle_maintenance WHERE tenant_id = ${user.tenant_id} AND vendor_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(orders), label: "purchase order" },
+      { n: countOf(bills), label: "bill" },
+      { n: countOf(maintenance), label: "maintenance record" },
+    ],
+    "Blacklist the vendor instead: the purchase history stays and nobody can raise a new order against them."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM vendors WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    RETURNING company_name
+  `;
+  if (gone.length === 0) return { error: "Vendor not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "vendor.deleted",
+    entity: "vendor",
+    entityId: id,
+    summary: `Deleted vendor ${(gone[0] as { company_name: string }).company_name}, never ordered from`,
+  });
+  revalidatePath("/vendors");
+  return { success: "Vendor deleted." };
+}
+
+const editWarehouseSchema = z.object({
+  warehouseId: z.string().uuid(),
+  name: z.string().trim().min(2, "Name is required").max(120),
+  code: nullable(20),
+  address: nullable(300),
+  latitude: z
+    .string()
+    .trim()
+    .transform((v) => (v === "" ? null : Number(v)))
+    .nullable()
+    .refine((v) => v === null || (v >= -90 && v <= 90), "Latitude must be between -90 and 90"),
+  longitude: z
+    .string()
+    .trim()
+    .transform((v) => (v === "" ? null : Number(v)))
+    .nullable()
+    .refine(
+      (v) => v === null || (v >= -180 && v <= 180),
+      "Longitude must be between -180 and 180"
+    ),
+  managerId: nullableUuid,
+  isActive: z.coerce.boolean().optional(),
+});
+
+export async function updateWarehouseAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("inventory", "edit");
+  const parsed = editWarehouseSchema.safeParse({
+    warehouseId: formData.get("warehouseId"),
+    name: formData.get("name") ?? "",
+    code: formData.get("code") ?? "",
+    address: formData.get("address") ?? "",
+    latitude: formData.get("latitude") ?? "",
+    longitude: formData.get("longitude") ?? "",
+    managerId: formData.get("managerId") ?? "",
+    isActive: formData.get("isActive") === "on",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const clash = await db`
+    SELECT 1 FROM warehouses
+     WHERE tenant_id = ${user.tenant_id} AND name = ${d.name} AND id <> ${d.warehouseId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { name: ["Another warehouse already has that name."] } };
+  }
+
+  const updated = await db`
+    UPDATE warehouses
+       SET name = ${d.name}, code = ${d.code}, address = ${d.address},
+           latitude = ${d.latitude}, longitude = ${d.longitude},
+           manager_id = ${d.managerId}, is_active = ${d.isActive ?? false}
+     WHERE id = ${d.warehouseId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Warehouse not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "warehouse.updated",
+    entity: "warehouse",
+    entityId: d.warehouseId,
+    summary: `Updated warehouse ${d.name}`,
+  });
+  revalidatePath("/inventory");
+  return { success: "Warehouse updated." };
+}
+
+export async function deleteWarehouseAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("inventory", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  const [items, orders, routes] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM inventory_items WHERE tenant_id = ${user.tenant_id} AND warehouse_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM purchase_orders WHERE tenant_id = ${user.tenant_id} AND warehouse_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM logistics_routes WHERE tenant_id = ${user.tenant_id} AND origin_warehouse_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(items), label: "stocked item" },
+      { n: countOf(orders), label: "purchase order" },
+      { n: countOf(routes), label: "logistics route" },
+    ],
+    "Untick Active instead: it keeps the history and stops appearing as a destination."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM warehouses WHERE id = ${id} AND tenant_id = ${user.tenant_id} RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Warehouse not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "warehouse.deleted",
+    entity: "warehouse",
+    entityId: id,
+    summary: `Deleted the empty warehouse ${(gone[0] as { name: string }).name}`,
+  });
+  revalidatePath("/inventory");
+  return { success: "Warehouse deleted." };
+}
+
+const editItemSchema = itemSchema
+  .omit({ currentStock: true })
+  .extend({ itemId: z.string().uuid(), isActive: z.coerce.boolean().optional() });
+
+/**
+ * Edits an inventory item — everything except the stock on hand.
+ *
+ * `current_stock` is deliberately not editable here. It is the running total
+ * of the movements in `stock_movements`, and letting a form overwrite it
+ * would put the two permanently out of step with no record of who changed
+ * what. A miscount is corrected with an "adjustment" movement, which leaves
+ * a trail.
+ */
+export async function updateInventoryItemAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("inventory", "edit");
+  const parsed = editItemSchema.safeParse({
+    itemId: formData.get("itemId"),
+    sku: formData.get("sku") ?? "",
+    itemName: formData.get("itemName") ?? "",
+    category: formData.get("category") ?? "",
+    unit: formData.get("unit") || "pcs",
+    reorderLevel: formData.get("reorderLevel") || 0,
+    reorderQuantity: formData.get("reorderQuantity") || 0,
+    unitCost: formData.get("unitCost") || 0,
+    warehouseId: formData.get("warehouseId") ?? "",
+    binLocation: formData.get("binLocation") ?? "",
+    isActive: formData.get("isActive") === "on",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const clash = await db`
+    SELECT 1 FROM inventory_items
+     WHERE tenant_id = ${user.tenant_id} AND sku = ${d.sku} AND id <> ${d.itemId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { sku: ["Another item already uses that SKU."] } };
+  }
+
+  const updated = await db`
+    UPDATE inventory_items
+       SET sku = ${d.sku}, item_name = ${d.itemName}, category = ${d.category},
+           unit = ${d.unit}, reorder_level = ${d.reorderLevel},
+           reorder_quantity = ${d.reorderQuantity}, unit_cost = ${d.unitCost},
+           warehouse_id = ${d.warehouseId}, bin_location = ${d.binLocation},
+           is_active = ${d.isActive ?? false}
+     WHERE id = ${d.itemId} AND tenant_id = ${user.tenant_id}
+    RETURNING item_name
+  `;
+  if (updated.length === 0) return { error: "Item not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "inventory_item.updated",
+    entity: "inventory_item",
+    entityId: d.itemId,
+    summary: `Updated item ${d.itemName}`,
+  });
+  revalidatePath("/inventory");
+  return { success: "Item updated." };
+}
+
+export async function deleteInventoryItemAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("inventory", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  const [movements, lines] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM stock_movements WHERE tenant_id = ${user.tenant_id} AND inventory_item_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM purchase_order_items WHERE tenant_id = ${user.tenant_id} AND inventory_item_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(movements), label: "stock movement" },
+      { n: countOf(lines), label: "purchase order line" },
+    ],
+    "Untick Active instead: the movement history stays and it drops out of the pick lists."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM inventory_items WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    RETURNING item_name
+  `;
+  if (gone.length === 0) return { error: "Item not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "inventory_item.deleted",
+    entity: "inventory_item",
+    entityId: id,
+    summary: `Deleted the unused item ${(gone[0] as { item_name: string }).item_name}`,
+  });
+  revalidatePath("/inventory");
+  return { success: "Item deleted." };
+}
+
+/**
+ * Deletes a logistics route.
+ *
+ * Nothing references a route, and one that has not left yet is a plan
+ * rather than a record — so a route that is still planned can be removed.
+ * One that has departed is a journey that happened, and is cancelled
+ * through its status instead.
+ */
+export async function deleteLogisticsRouteAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("logistics", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  const gone = await db`
+    DELETE FROM logistics_routes
+     WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+       AND status = 'planned' AND actual_departure IS NULL
+    RETURNING reference, destination
+  `;
+  if (gone.length === 0) {
+    return {
+      error:
+        "Only a route that has not left yet can be deleted. Set this one to cancelled " +
+        "instead — once a vehicle has departed, the journey is a record.",
+    };
+  }
+  const r = gone[0] as { reference: string | null; destination: string };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "route.deleted",
+    entity: "logistics_route",
+    entityId: id,
+    summary: `Deleted the planned route ${r.reference ?? ""} to ${r.destination}`.trim(),
+  });
+  revalidatePath("/logistics");
+  return { success: "Route deleted." };
 }

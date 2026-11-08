@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
-import { Building2, CalendarClock, CircleSlash } from "lucide-react";
+import { Building2, CalendarClock, CircleSlash, Trash2 } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { listRoomBookings, listRooms } from "@/lib/workplace";
 import {
   bookRoomAction,
   cancelRoomBookingAction,
   createRoomAction,
+  deleteRoomAction,
+  updateRoomAction,
 } from "@/lib/actions/workplace";
 import ActionButton from "@/components/ActionButton";
+import EditDialog from "@/components/forms/EditDialog";
 import AutoForm from "@/components/forms/AutoForm";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/utils";
@@ -24,6 +27,7 @@ export default async function RoomsPage() {
   ]);
 
   const canCreate = hasPermission(user, "facilities", "create");
+  const canEditRooms = hasPermission(user, "facilities", "edit");
   const now = Date.now();
   const upcoming = bookings.filter(
     (b) => b.status === "confirmed" && new Date(b.end_time).getTime() > now
@@ -93,6 +97,53 @@ export default async function RoomsPage() {
                           <StatusBadge status={r.status} />
                         )}
                         <span className="badge badge-neutral">{r.upcoming} booked</span>
+                        {canEditRooms && (
+                          <>
+                            <EditDialog
+                              title={`Edit ${r.name}`}
+                              action={updateRoomAction}
+                              hidden={{ roomId: r.id }}
+                              fields={[
+                                { name: "name", label: "Name", required: true, defaultValue: r.name },
+                                { name: "code", label: "Code", defaultValue: r.code ?? "" },
+                                { name: "floor", label: "Floor", defaultValue: r.floor ?? "" },
+                                {
+                                  name: "capacity",
+                                  label: "Seats",
+                                  type: "number",
+                                  min: 0,
+                                  defaultValue: r.capacity,
+                                },
+                                {
+                                  name: "amenities",
+                                  label: "Amenities",
+                                  defaultValue: (r.amenities ?? []).join(", "),
+                                  help: "Comma separated.",
+                                },
+                                {
+                                  name: "status",
+                                  label: "Status",
+                                  type: "select",
+                                  required: true,
+                                  defaultValue: r.status,
+                                  options: ["available", "maintenance", "retired"].map((v) => ({
+                                    value: v,
+                                    label: v,
+                                  })),
+                                },
+                              ]}
+                            />
+                            <ActionButton
+                              action={deleteRoomAction}
+                              values={{ id: r.id }}
+                              label=""
+                              title={`Delete ${r.name}`}
+                              className="btn-ghost btn-icon"
+                              icon={<Trash2 size={14} />}
+                              confirm={`Delete ${r.name}? This only works while it has never been booked.`}
+                            />
+                          </>
+                        )}
                       </div>
                     </li>
                   );

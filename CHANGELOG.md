@@ -3,6 +3,83 @@
 Every change to this repository, newest first. Dates are absolute.
 Status of the project as a whole lives in [PROGRESS.md](PROGRESS.md).
 
+## 2026-11-08 — What an administrator can change, and what nothing can destroy
+
+Every module could create. Only two screens could edit or remove anything.
+That gap is now closed — and closing it meant deciding, per entity, what
+"remove" should mean.
+
+### An employee record is never deleted
+
+There is no action that deletes a user, and a test asserts there is none. A
+person's attendance, leave, payslips, approvals and audit trail all
+reference their row, and the duty to keep employment records outlives the
+employment. The only lifecycle change is **active / inactive**, offered as
+one control on their profile: it ends their sessions, blocks sign-in, keeps
+every row that points at them, and can be undone. `/users` keeps the fuller
+status list for the access nuance between *suspended* and *left*.
+
+### An admin can set a password directly
+
+`resetUserPasswordAction` now takes an optional password. Typed, it is set —
+which is what actually happens when somebody is standing at the desk and a
+new password is agreed out loud. Left blank, one is generated and shown
+once. A typed password is **not** echoed back: the administrator already
+knows it, and repeating it only puts it somewhere else. Both routes end
+every session the account has open, and neither can be aimed at the caller.
+
+Found while testing: `FormData.get` answers `null` for a field that is not
+in the submission, and `null` is not `undefined` to an optional string — so
+a caller that wanted a generated password was refused as invalid. Fixed.
+
+### Edit and delete, everywhere they belong
+
+Departments, leave types, public holidays, clients, rooms, assets,
+projects, tasks, warehouses, inventory items, vehicles, shifts, geofences
+and planned logistics routes can now be edited in place, and vendors and
+the rest can be deleted. Editing is one shared `EditDialog` — the same
+`AutoForm`, with the row's values as defaults, in the native `<dialog>` the
+leave calendar introduced — rather than fifteen new `/thing/[id]/edit`
+routes.
+
+**The rule behind every delete**, written down in `src/lib/guards.ts`:
+
+> Almost every foreign key in this schema is `ON DELETE CASCADE`, which is
+> the right answer for referential integrity and the wrong one for a
+> business rule. Deleting a vehicle would take its bookings, trips and
+> maintenance history with it, silently, because the database was told to
+> tidy up rather than to object.
+
+So each delete counts its dependents first and refuses while any remain,
+naming them — "1 employee", "3 deals" — and naming the way out: retire it,
+blacklist it, untick Active, mark it churned. A record with no history is a
+mistake and can go; a record with history is a fact and is retired instead.
+
+**Deliberately still not deletable:** invoices, bills, payments, journal
+entries, payslips, approved purchase orders, attendance records and audit
+logs. Financial and audit history is corrected by reversal, not by removal.
+The one delete that does cascade is a task taking its comments, because a
+task is a plan rather than a record of something that happened.
+
+### Also
+
+- **Public holidays can finally be entered.** The table has existed since
+  the first schema and nothing could put a row in it, so the timesheet and
+  the leave calendar both read it and both always found it empty. `/leave`
+  now manages the year's calendar.
+- The vehicle odometer is `GREATEST(current_odometer, …)` on edit: it only
+  ever moves forward, and a typo that moved it back would make the next
+  trip's distance negative and its fuel cost nonsense.
+- An inventory item's stock on hand is not editable. It is the running
+  total of its movements; a miscount is corrected with an adjustment, which
+  leaves a trail.
+- `SubmitButton` and `ActionButton` take a `label`/`title`, so an icon-only
+  delete button has an accessible name.
+- `AutoForm` gained an `onSuccess` callback, which is how the edit dialog
+  closes itself.
+- Tests: 173 in 15 files, up from 154 in 14. Eight guards reverted and
+  watched to go red.
+
 ## 2026-11-08 — Forgotten passwords, and the first outbound email
 
 Until now, somebody who forgot their password had to find a company admin

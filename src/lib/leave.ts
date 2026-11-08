@@ -259,3 +259,28 @@ export async function holidaysBetween(tenantId: string, from: string, to: string
   `;
   return rows as unknown as { holiday_date: string; name: string }[];
 }
+
+/**
+ * Every public holiday in one calendar year, with its id so it can be edited.
+ *
+ * The month calendar filters this down rather than running a second query:
+ * a year of holidays is a handful of rows, and the settings card beside it
+ * needs the same list.
+ */
+export async function listHolidays(tenantId: string, year: number) {
+  const db = await getDb();
+  const rows = await db`
+    SELECT id, holiday_date, name, is_recurring
+      FROM holidays
+     WHERE tenant_id = ${tenantId}
+       AND holiday_date >= ${`${year}-01-01`}::date
+       AND holiday_date <= ${`${year}-12-31`}::date
+     ORDER BY holiday_date
+  `;
+  return rows as unknown as {
+    id: string;
+    holiday_date: string;
+    name: string;
+    is_recurring: boolean;
+  }[];
+}

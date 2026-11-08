@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, Plus, Truck, Wrench } from "lucide-react";
+import { AlertTriangle, Plus, Trash2, Truck, Wrench } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { fleetCostTrend, fleetStats, listDrivers, listVehicles } from "@/lib/fleet";
-import { createVehicleAction, setVehicleStatusAction } from "@/lib/actions/fleet";
+import {
+  createVehicleAction,
+  deleteVehicleAction,
+  setVehicleStatusAction,
+  updateVehicleAction,
+} from "@/lib/actions/fleet";
 import ActionButton from "@/components/ActionButton";
+import EditDialog from "@/components/forms/EditDialog";
 import AutoForm from "@/components/forms/AutoForm";
 import FilterBar from "@/components/FilterBar";
 import { BarChart } from "@/components/charts";
@@ -162,6 +168,98 @@ export default async function FleetPage({
                         </td>
                         {canEdit && (
                           <td>
+                            <EditDialog
+                              title={`Edit ${v.registration_number}`}
+                              action={updateVehicleAction}
+                              hidden={{ vehicleId: v.id }}
+                              columns={2}
+                              fields={[
+                                {
+                                  name: "registrationNumber",
+                                  label: "Registration",
+                                  required: true,
+                                  defaultValue: v.registration_number,
+                                },
+                                { name: "make", label: "Make", defaultValue: v.make ?? "" },
+                                { name: "model", label: "Model", defaultValue: v.model ?? "" },
+                                {
+                                  name: "year",
+                                  label: "Year",
+                                  type: "number",
+                                  min: 1950,
+                                  max: 2100,
+                                  defaultValue: v.year ?? "",
+                                },
+                                {
+                                  name: "vehicleType",
+                                  label: "Type",
+                                  type: "select",
+                                  required: true,
+                                  defaultValue: v.vehicle_type,
+                                  options: [
+                                    "car",
+                                    "van",
+                                    "pickup",
+                                    "truck",
+                                    "bus",
+                                    "motorcycle",
+                                    "forklift",
+                                    "other",
+                                  ].map((o) => ({ value: o, label: o })),
+                                },
+                                {
+                                  name: "fuelType",
+                                  label: "Fuel",
+                                  type: "select",
+                                  required: true,
+                                  defaultValue: v.fuel_type,
+                                  options: [
+                                    "petrol",
+                                    "diesel",
+                                    "octane",
+                                    "cng",
+                                    "lpg",
+                                    "electric",
+                                    "hybrid",
+                                  ].map((o) => ({ value: o, label: o })),
+                                },
+                                {
+                                  name: "currentOdometer",
+                                  label: "Odometer (km)",
+                                  type: "number",
+                                  min: 0,
+                                  defaultValue: v.current_odometer,
+                                  help: "Only ever moves forward; a lower figure is ignored.",
+                                },
+                                {
+                                  name: "insuranceExpiry",
+                                  label: "Insurance expires",
+                                  type: "date",
+                                  defaultValue: v.insurance_expiry ?? "",
+                                },
+                                {
+                                  name: "fitnessExpiry",
+                                  label: "Fitness expires",
+                                  type: "date",
+                                  defaultValue: v.fitness_expiry ?? "",
+                                },
+                                {
+                                  name: "taxTokenExpiry",
+                                  label: "Tax token expires",
+                                  type: "date",
+                                  defaultValue: v.tax_token_expiry ?? "",
+                                },
+                              ]}
+                            />
+                            <ActionButton
+                              action={deleteVehicleAction}
+                              values={{ id: v.id }}
+                              label=""
+                              title={`Delete ${v.registration_number}`}
+                              className="btn-ghost btn-icon"
+                              icon={<Trash2 size={14} />}
+                              confirm={`Delete ${v.registration_number}? This only works while it has no bookings, trips or services.`}
+                            />
                             {v.status !== "maintenance" ? (
                               <ActionButton
                                 action={setVehicleStatusAction}

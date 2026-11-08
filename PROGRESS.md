@@ -33,12 +33,12 @@ Last updated: **2026-11-07**
 | 7 | Finance, facilities, tasks | **Done** |
 | 8 | IT/MIS, GPS engine, governance | **Done** |
 | 9 | Ship: GitHub, Neon, Vercel | **Done** — database live, project deployed |
-| 10 | Automated tests | **Started 2026-11-07** — 154 tests, the known defects, three invariants, bulk import, the timesheet, the leave calendar and the password-reset flow; most of the product still uncovered |
+| 10 | Automated tests | **Started 2026-11-07** — 173 tests, the known defects, three invariants, bulk import, the timesheet, the leave calendar and the password-reset flow; most of the product still uncovered |
 
-`npm run build` is clean. `npm run check` reports **394 SQL statements across
-128 files, 61 of 65 tables tenant-scoped, every tenant-scoped query filtering
+`npm run build` is clean. `npm run check` reports **456 SQL statements across
+131 files, 61 of 65 tables tenant-scoped, every tenant-scoped query filtering
 by `tenant_id`**, and **every referenced column existing in the schema**.
-`npm test` runs **154 tests in 14 files** against a throwaway Neon branch, green
+`npm test` runs **173 tests in 15 files** against a throwaway Neon branch, green
 in ~50 s. `npm run verify` is both, and is the command to run before a commit.
 
 ### Exercised on the running product, 2026-11-07
@@ -248,6 +248,20 @@ That run surfaced the cross-region latency problem recorded under
   bad rows by the spreadsheet's own line number and write the good ones
   anyway. New accounts' temporary passwords are shown once and downloadable
   as a CSV, never stored in readable form.
+- **Administration: edit, retire, delete** (added 2026-11-08): every module
+  could create and almost none could change or remove. Departments, leave
+  types, public holidays, clients, rooms, assets, projects, tasks,
+  warehouses, inventory items, vehicles, shifts, geofences and planned
+  routes are now editable in place through one shared dialog, and
+  deletable when nothing references them. A delete counts its dependents
+  first and refuses while any remain — naming them, and naming the way out
+  — because nearly every foreign key here cascades and would otherwise
+  take a year of history with it. Invoices, payments, payslips, approved
+  orders, attendance and audit rows stay undeletable by design.
+  **An employee is never deleted**: the only lifecycle change is
+  active/inactive, which ends their sessions and keeps every record that
+  references them. A company admin can also set somebody's password
+  directly, or have one generated and shown once.
 - **Forgotten passwords** (added 2026-11-08): sign-in carries a *Forgot
   password?* link. `/forgot-password` emails a one-hour, single-use link
   whose SHA-256 alone is stored; `/reset-password` takes the new password
@@ -314,7 +328,7 @@ That run surfaced the cross-region latency problem recorded under
   validation, alerts, spacing and pending states cannot drift between modules.
 
 **Tests** — [docs/TESTING.md](docs/TESTING.md)
-- 154 `vitest` tests in 14 files running the real `src/lib` modules against a
+- 173 `vitest` tests in 15 files running the real `src/lib` modules against a
   throwaway Neon branch. Nothing in `src/` is mocked; no database call is
   faked. Five request-scoped modules are stubbed because they cannot exist
   outside a request, and the reason for each is at the top of
@@ -389,7 +403,7 @@ That run surfaced the cross-region latency problem recorded under
   the geofence circle and the live counters. Route playback and clustering at
   scale are still only exercised by the code behind them — one device on one
   short track is not a crowd.
-- **There is now a test suite, and what it does not cover is the risk.** 154
+- **There is now a test suite, and what it does not cover is the risk.** 173
   tests (`npm test`) run the real `src/lib` modules against a throwaway Neon
   branch — see [docs/TESTING.md](docs/TESTING.md). They pin the four defects
   of 2026-11-07, each confirmed by reverting its fix and watching the test go

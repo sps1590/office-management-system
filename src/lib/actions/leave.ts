@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { audit, notify } from "@/lib/audit";
 import { daysBetween } from "@/lib/utils";
+import { countOf, stillInUse } from "@/lib/guards";
 import type { ActionState } from "@/lib/types";
 
 const requestSchema = z
@@ -444,4 +445,213 @@ export async function createLeaveTypeAction(
   });
   revalidatePath("/leave");
   return { success: `Leave type "${d.name}" added.` };
+}
+
+/* --- leave types and the company calendar -------------------------------- */
+
+const editLeaveTypeSchema = z.object({
+  leaveTypeId: z.string().uuid(),
+  name: z.string().trim().min(2, "Name is required").max(60),
+  annualQuota: z.coerce.number().min(0).max(400),
+  isPaid: z.coerce.boolean().optional(),
+  color: z.string().trim().max(9).optional(),
+  isActive: z.coerce.boolean().optional(),
+});
+
+/**
+ * Edits a leave type in place.
+ *
+ * `key` is deliberately not editable. It is the stable handle the seeded
+ * types are found by and the spreadsheet importer matches on; renaming a
+ * type should change what people read, not break what refers to it.
+ */
+export async function updateLeaveTypeAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("leave", "edit");
+  const parsed = editLeaveTypeSchema.safeParse({
+    leaveTypeId: formData.get("leaveTypeId"),
+    name: formData.get("name"),
+    annualQuota: formData.get("annualQuota") || 0,
+    isPaid: formData.get("isPaid") === "on",
+    color: formData.get("color") || "#6366f1",
+    isActive: formData.get("isActive") === "on",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const clash = await db`
+    SELECT 1 FROM leave_types
+     WHERE tenant_id = ${user.tenant_id} AND lower(name) = lower(${d.name})
+       AND id <> ${d.leaveTypeId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { name: ["Another leave type already has that name."] } };
+  }
+
+  const updated = await db`
+    UPDATE leave_types
+       SET name = ${d.name}, annual_quota = ${d.annualQuota}, is_paid = ${d.isPaid ?? false},
+           color = ${d.color ?? "#6366f1"}, is_active = ${d.isActive ?? false}
+     WHERE id = ${d.leaveTypeId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Leave type not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "leave_type.updated",
+    entity: "leave_type",
+    entityId: d.leaveTypeId,
+    summary: `Updated leave type ${d.name}`,
+  });
+  revalidatePath("/leave");
+  return { success: "Leave type updated." };
+}
+
+export async function deleteLeaveTypeAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("leave", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  /*
+     `leave_requests.leave_type_id` is ON DELETE RESTRICT, so the database
+     would raise rather than cascade — but a foreign-key violation reaches
+     the screen as "something went wrong". Counting first turns it into a
+     sentence that says what to do. Balances cascade, and a balance is an
+     entitlement somebody is owed, so those are counted too.
+  */
+  const [requests, balances] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM leave_requests WHERE tenant_id = ${user.tenant_id} AND leave_type_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM leave_balances WHERE tenant_id = ${user.tenant_id} AND leave_type_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(requests), label: "leave request" },
+      { n: countOf(balances), label: "entitlement" },
+    ],
+    "Untick “Active” on it instead: it stays on past records and disappears from the request form."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM leave_types WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Leave type not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "leave_type.deleted",
+    entity: "leave_type",
+    entityId: id,
+    summary: `Deleted the unused leave type ${(gone[0] as { name: string }).name}`,
+  });
+  revalidatePath("/leave");
+  return { success: "Leave type deleted." };
+}
+
+const holidaySchema = z.object({
+  holidayId: z.string().uuid().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+  name: z.string().trim().min(2, "Name is required").max(120),
+  isRecurring: z.coerce.boolean().optional(),
+});
+
+/**
+ * The company's public holidays.
+ *
+ * The table has existed since the first schema and until now nothing could
+ * put a row in it — the timesheet and the leave calendar both read it and
+ * both always found it empty.
+ */
+export async function saveHolidayAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("leave", "edit");
+  const parsed = holidaySchema.safeParse({
+    holidayId: formData.get("holidayId") || undefined,
+    date: formData.get("date"),
+    name: formData.get("name"),
+    isRecurring: formData.get("isRecurring") === "on",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  if (d.holidayId) {
+    const updated = await db`
+      UPDATE holidays SET holiday_date = ${d.date}, name = ${d.name},
+                          is_recurring = ${d.isRecurring ?? false}
+       WHERE id = ${d.holidayId} AND tenant_id = ${user.tenant_id}
+      RETURNING name
+    `;
+    if (updated.length === 0) return { error: "Holiday not found." };
+  } else {
+    // One holiday per date, which the table's own unique constraint already
+    // says; ON CONFLICT turns a second entry for the same day into a rename
+    // rather than an error nobody can act on.
+    await db`
+      INSERT INTO holidays (tenant_id, holiday_date, name, is_recurring)
+      VALUES (${user.tenant_id}, ${d.date}, ${d.name}, ${d.isRecurring ?? false})
+      ON CONFLICT (tenant_id, holiday_date)
+        DO UPDATE SET name = EXCLUDED.name, is_recurring = EXCLUDED.is_recurring
+    `;
+  }
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: d.holidayId ? "holiday.updated" : "holiday.created",
+    entity: "holiday",
+    entityId: d.holidayId ?? null,
+    summary: `${d.holidayId ? "Updated" : "Added"} the holiday ${d.name} on ${d.date}`,
+  });
+  revalidatePath("/leave");
+  revalidatePath("/me");
+  return { success: d.holidayId ? "Holiday updated." : "Holiday added." };
+}
+
+export async function deleteHolidayAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("leave", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+
+  const db = await getDb();
+  // Nothing references a holiday; the timesheet reads it by date. So this is
+  // one of the few rows in the product that is safe to simply remove.
+  const gone = await db`
+    DELETE FROM holidays WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    RETURNING name, holiday_date
+  `;
+  if (gone.length === 0) return { error: "Holiday not found." };
+  const h = gone[0] as { name: string; holiday_date: string };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "holiday.deleted",
+    entity: "holiday",
+    entityId: id,
+    summary: `Removed the holiday ${h.name} on ${h.holiday_date}`,
+  });
+  revalidatePath("/leave");
+  revalidatePath("/me");
+  return { success: "Holiday removed." };
 }

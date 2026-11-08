@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
-import { Contact, MapPin, MapPinOff } from "lucide-react";
+import { Contact, MapPin, MapPinOff, Trash2 } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { listClients } from "@/lib/crm";
 import { pickableUsers } from "@/lib/employees";
-import { createClientAction } from "@/lib/actions/crm";
+import {
+  createClientAction,
+  deleteClientAction,
+  updateClientAction,
+} from "@/lib/actions/crm";
+import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
+import EditDialog from "@/components/forms/EditDialog";
 import FilterBar from "@/components/FilterBar";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { compact, money } from "@/lib/utils";
@@ -25,6 +31,7 @@ export default async function ClientsPage({
   ]);
 
   const canCreate = hasPermission(user, "crm", "create");
+  const canEdit = hasPermission(user, "crm", "edit");
   const currency = user.tenant.currency;
   const located = clients.filter((c) => c.latitude != null).length;
   const openValue = clients.reduce((s, c) => s + c.open_value, 0);
@@ -100,6 +107,7 @@ export default async function ClientsPage({
                     <th className="right">Open value</th>
                     <th>Location</th>
                     <th>Status</th>
+                    {canEdit && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -135,6 +143,73 @@ export default async function ClientsPage({
                       <td>
                         <StatusBadge status={c.status} />
                       </td>
+                      {canEdit && (
+                        <td>
+                          <span className="flex items-center gap-0.5">
+                            <EditDialog
+                              title={`Edit ${c.name}`}
+                              action={updateClientAction}
+                              hidden={{ clientId: c.id }}
+                              fields={[
+                                { name: "name", label: "Client name", required: true, defaultValue: c.name },
+                                {
+                                  name: "status",
+                                  label: "Status",
+                                  type: "select",
+                                  required: true,
+                                  defaultValue: c.status,
+                                  options: ["lead", "prospect", "active", "inactive", "churned"].map(
+                                    (v) => ({ value: v, label: v })
+                                  ),
+                                },
+                                { name: "industry", label: "Industry", defaultValue: c.industry ?? "" },
+                                {
+                                  name: "contactPerson",
+                                  label: "Contact person",
+                                  defaultValue: c.contact_person ?? "",
+                                },
+                                { name: "email", label: "Email", type: "email", defaultValue: c.email ?? "" },
+                                { name: "phone", label: "Phone", type: "tel", defaultValue: c.phone ?? "" },
+                                { name: "source", label: "Lead source", defaultValue: c.source ?? "" },
+                                {
+                                  name: "ownerId",
+                                  label: "Account owner",
+                                  type: "select",
+                                  defaultValue: c.owner_id ?? "",
+                                  options: [
+                                    { value: "", label: "Nobody" },
+                                    ...people.map((pp) => ({ value: pp.id, label: pp.full_name })),
+                                  ],
+                                },
+                                {
+                                  name: "address",
+                                  label: "Address",
+                                  type: "textarea",
+                                  rows: 2,
+                                  defaultValue: c.address ?? "",
+                                },
+                                {
+                                  name: "latitude",
+                                  lngName: "longitude",
+                                  label: "Location",
+                                  type: "location",
+                                  defaultValue: c.latitude,
+                                  defaultLng: c.longitude,
+                                },
+                              ]}
+                            />
+                            <ActionButton
+                              action={deleteClientAction}
+                              values={{ id: c.id }}
+                              label=""
+                              title={`Delete ${c.name}`}
+                              className="btn-ghost btn-icon"
+                              icon={<Trash2 size={14} />}
+                              confirm={`Delete ${c.name}? This only works while they have no deals, invoices or visits.`}
+                            />
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

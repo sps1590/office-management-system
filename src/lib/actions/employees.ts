@@ -13,6 +13,7 @@ import { requireCompanyAdmin, requirePermission, isCompanyAdmin } from "@/lib/pe
 import { getDb } from "@/lib/db";
 import { audit, notify } from "@/lib/audit";
 import { nextDocNumber } from "@/lib/sequence";
+import { countOf, stillInUse } from "@/lib/guards";
 import type { ActionState } from "@/lib/types";
 import { MODULES, PERM_ACTIONS, type Module, type PermAction } from "@/lib/modules";
 
@@ -356,6 +357,17 @@ export async function createDepartmentAction(
 
 /* --- access control: company admin only ---------------------------------- */
 
+/*
+   An employee record is never deleted.
+
+   There is no `deleteUserAction` in this file and there must not be one.
+   A person's attendance, leave, payslips, approvals, expense claims and
+   audit trail all reference their row, and a company's obligation to keep
+   employment records outlives the employment. Someone who leaves is marked
+   `left`; someone whose access is withdrawn while they are still on the
+   books is `suspended`. Both end their live sessions and both are
+   reversible, which deletion is not.
+*/
 const statusSchema = z.object({
   userId: z.string().uuid(),
   status: z.enum(["active", "invited", "suspended", "left"]),
@@ -403,17 +415,41 @@ export async function setUserStatusAction(
   return { success: "Account status updated." };
 }
 
-const resetPasswordSchema = z.object({ userId: z.string().uuid() });
+const resetPasswordSchema = z.object({
+  userId: z.string().uuid(),
+  /*
+     Optional. Left blank, the system generates one and shows it once; filled
+     in, the administrator is setting a password they have already agreed
+     with the person — which is what actually happens when somebody is
+     standing at the desk. Either way it is bcrypt-hashed on the way in and
+     the plain value is never stored.
+  */
+  password: z
+    .string()
+    .max(200)
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined))
+    .refine(
+      (v) =>
+        v === undefined ||
+        (v.length >= 8 && /[a-z]/.test(v) && /[A-Z]/.test(v) && /[0-9]/.test(v)),
+      { message: "Use at least 8 characters, with upper case, lower case and a number" }
+    ),
+});
 
 /**
- * Sets a new temporary password for somebody who has lost theirs, and hands
- * it to the administrator to pass on.
+ * Sets somebody else's password: one the administrator types, or one the
+ * system generates and shows once.
  *
  * Until this existed there was no way back into an account at all. The
  * self-service change at `/me` needs the current password, and a reset link
  * needs a mail provider the product does not have -- so anyone who forgot
  * their password was locked out of the company for good, with no one able to
  * help them. That happened to this project's own first admin.
+ *
+ * A typed password is not echoed back: the administrator already knows it,
+ * and repeating it only puts it somewhere else. The generated one is shown
+ * once because nobody knows it yet.
  *
  * Never on yourself, which is the security half of it. A signed-in session
  * can already change its own password at `/me`, but only by proving the
@@ -427,9 +463,19 @@ export async function resetUserPasswordAction(
   formData: FormData
 ): Promise<ActionState> {
   const user = await requireCompanyAdmin();
-  const parsed = resetPasswordSchema.safeParse({ userId: formData.get("userId") });
-  if (!parsed.success) return { error: "Invalid request." };
-  const { userId } = parsed.data;
+  const parsed = resetPasswordSchema.safeParse({
+    userId: formData.get("userId"),
+    // `FormData.get` answers null for a field that is not in the submission
+    // at all, and null is not `undefined` to an optional string. Without
+    // this, a form posted without the input -- which is every caller that
+    // only wants a generated password -- was refused as invalid.
+    password: formData.get("password") ?? undefined,
+  });
+  if (!parsed.success) {
+    const fieldErrors = z.flattenError(parsed.error).fieldErrors;
+    return fieldErrors.password ? { fieldErrors } : { error: "Invalid request." };
+  }
+  const { userId, password: chosen } = parsed.data;
 
   if (userId === user.id) {
     return {
@@ -440,10 +486,10 @@ export async function resetUserPasswordAction(
   }
 
   const db = await getDb();
-  const tempPassword = generateTempPassword();
+  const newPassword = chosen ?? generateTempPassword();
   const updated = await db`
     UPDATE users
-       SET password_hash = ${hashPassword(tempPassword)}, updated_at = now()
+       SET password_hash = ${hashPassword(newPassword)}, updated_at = now()
      WHERE id = ${userId} AND tenant_id = ${user.tenant_id}
     RETURNING full_name, email
   `;
@@ -463,15 +509,23 @@ export async function resetUserPasswordAction(
     action: "user.password_reset",
     entity: "user",
     entityId: userId,
-    summary: `Reset the password for ${target.full_name} and ended their sessions`,
+    summary: chosen
+      ? `Set a new password for ${target.full_name} and ended their sessions`
+      : `Reset the password for ${target.full_name} and ended their sessions`,
+    // Which of the two routes was taken is worth keeping; the password
+    // itself is never written anywhere but the hash column.
+    meta: { method: chosen ? "set_by_admin" : "generated" },
   });
 
   revalidatePath("/users");
+  revalidatePath(`/employees/${userId}`);
   return {
-    success:
-      `New password for ${target.full_name} (${target.email}): ${tempPassword} — give it ` +
-      `to them directly and ask them to change it on their profile. It is not shown again, ` +
-      `and any session they had open has been signed out.`,
+    success: chosen
+      ? `Password updated for ${target.full_name} (${target.email}). Any session they had ` +
+        `open has been signed out, so they will need to sign in with the new one.`
+      : `New password for ${target.full_name} (${target.email}): ${newPassword} — give it ` +
+        `to them directly and ask them to change it on their profile. It is not shown again, ` +
+        `and any session they had open has been signed out.`,
   };
 }
 
@@ -635,4 +689,118 @@ export async function changePasswordAction(
     summary: "Password changed",
   });
   return { success: "Password updated." };
+}
+
+/* --- departments: edit and remove ---------------------------------------- */
+
+const editDepartmentSchema = z.object({
+  departmentId: z.string().uuid(),
+  name: z.string().trim().min(2, "Name is required").max(120),
+  code: z.string().trim().max(20).optional(),
+  headUserId: optionalUuid,
+});
+
+export async function updateDepartmentAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("employees", "edit");
+  const parsed = editDepartmentSchema.safeParse({
+    departmentId: formData.get("departmentId"),
+    name: formData.get("name") ?? "",
+    code: formData.get("code") ?? "",
+    headUserId: formData.get("headUserId") ?? "",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  if (d.headUserId) {
+    const owned = await db`
+      SELECT 1 FROM users WHERE id = ${d.headUserId} AND tenant_id = ${user.tenant_id}
+    `;
+    if (owned.length === 0) return { error: "Invalid department head." };
+  }
+
+  const clash = await db`
+    SELECT 1 FROM departments
+     WHERE tenant_id = ${user.tenant_id} AND name = ${d.name} AND id <> ${d.departmentId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { name: ["Another department already has that name."] } };
+  }
+
+  const updated = await db`
+    UPDATE departments
+       SET name = ${d.name}, code = ${d.code || null}, head_user_id = ${d.headUserId}
+     WHERE id = ${d.departmentId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Department not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "department.updated",
+    entity: "department",
+    entityId: d.departmentId,
+    summary: `Updated department ${d.name}`,
+  });
+  revalidatePath("/employees");
+  return { success: "Department updated." };
+}
+
+const idOnly = z.object({ id: z.string().uuid() });
+
+export async function deleteDepartmentAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("employees", "edit");
+  const parsed = idOnly.safeParse({ id: formData.get("id") });
+  if (!parsed.success) return { error: "Invalid request." };
+  const { id } = parsed.data;
+  const db = await getDb();
+
+  /*
+     Every dependent of a department is ON DELETE SET NULL except budgets,
+     which cascade. So the database would happily delete this and quietly
+     unfile every employee in it — and destroy the budget lines. Counted and
+     refused instead.
+  */
+  const [people, assets, projects, budgets] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM users WHERE tenant_id = ${user.tenant_id} AND department_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM assets WHERE tenant_id = ${user.tenant_id} AND department_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM projects WHERE tenant_id = ${user.tenant_id} AND department_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM budgets WHERE tenant_id = ${user.tenant_id} AND department_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(people), label: "employee" },
+      { n: countOf(assets), label: "asset" },
+      { n: countOf(projects), label: "project" },
+      { n: countOf(budgets), label: "budget line" },
+    ],
+    "Move them to another department first."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM departments WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Department not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "department.deleted",
+    entity: "department",
+    entityId: id,
+    summary: `Deleted the empty department ${(gone[0] as { name: string }).name}`,
+  });
+  revalidatePath("/employees");
+  return { success: "Department deleted." };
 }

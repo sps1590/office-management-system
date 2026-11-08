@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
-import { Star, Store } from "lucide-react";
+import { Star, Store, Trash2 } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { listVendors, spendByVendor } from "@/lib/procurement";
-import { createVendorAction, updateVendorAction } from "@/lib/actions/procurement";
+import {
+  createVendorAction,
+  deleteVendorAction,
+  updateVendorAction,
+} from "@/lib/actions/procurement";
+import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
 import FilterBar from "@/components/FilterBar";
 import { RowBars } from "@/components/charts";
@@ -95,6 +100,7 @@ export default async function VendorsPage({
                       <th className="right">Orders</th>
                       <th className="right">Spend</th>
                       <th>Status</th>
+                      {canEdit && <th></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -122,6 +128,19 @@ export default async function VendorsPage({
                         <td>
                           <StatusBadge status={v.status} />
                         </td>
+                        {canEdit && (
+                          <td>
+                            <ActionButton
+                              action={deleteVendorAction}
+                              values={{ id: v.id }}
+                              label=""
+                              title={`Delete ${v.company_name}`}
+                              className="btn-ghost btn-icon"
+                              icon={<Trash2 size={14} />}
+                              confirm={`Delete ${v.company_name}? This only works while you have never ordered from them — blacklist them otherwise.`}
+                            />
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

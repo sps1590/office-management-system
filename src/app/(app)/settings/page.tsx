@@ -12,12 +12,14 @@ import {
   assignShiftAction,
   createShiftAction,
   deleteShiftAction,
+  updateShiftAction,
   updateWorkingWeekAction,
 } from "@/lib/actions/shifts";
 import { listShifts, staffWithShifts } from "@/lib/shifts";
 import { DAY_NAMES, shiftMinutes, workDaysLabel } from "@/lib/work-pattern";
 import AutoForm from "@/components/forms/AutoForm";
 import ActionButton from "@/components/ActionButton";
+import EditDialog from "@/components/forms/EditDialog";
 import { ShiftForm, WorkingWeekForm } from "@/components/forms/WorkingPatternForms";
 import { Card, Field, PageHeader } from "@/components/ui";
 import { duration, formatDate, monthName } from "@/lib/utils";
@@ -251,6 +253,47 @@ export default async function SettingsPage() {
                     <td className="text-fg-muted">{workDaysLabel(s.work_days)}</td>
                     <td className="right tabular-nums">{s.user_count ?? 0}</td>
                     <td className="right">
+                      <EditDialog
+                        title={`Edit the ${s.name} shift`}
+                        action={updateShiftAction}
+                        hidden={{ shiftId: s.id }}
+                        columns={2}
+                        fields={[
+                          { name: "name", label: "Name", required: true, defaultValue: s.name },
+                          {
+                            name: "startTime",
+                            label: "Starts",
+                            type: "time",
+                            required: true,
+                            defaultValue: s.start_time.slice(0, 5),
+                          },
+                          {
+                            name: "endTime",
+                            label: "Ends",
+                            type: "time",
+                            required: true,
+                            defaultValue: s.end_time.slice(0, 5),
+                            help: "An end at or before the start crosses midnight.",
+                          },
+                          {
+                            name: "breakMinutes",
+                            label: "Unpaid break (min)",
+                            type: "number",
+                            min: 0,
+                            max: 480,
+                            defaultValue: s.break_minutes,
+                          },
+                          {
+                            name: "graceMinutes",
+                            label: "Grace (min)",
+                            type: "number",
+                            min: 0,
+                            max: 240,
+                            defaultValue: s.grace_minutes ?? "",
+                            help: "Blank falls back to the company's grace period.",
+                          },
+                        ]}
+                      />
                       <ActionButton
                         action={deleteShiftAction}
                         values={{ shiftId: s.id }}

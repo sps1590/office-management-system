@@ -13,12 +13,14 @@ import { getSettings } from "@/lib/settings";
 import {
   assignGeofenceAction,
   createGeofenceAction,
+  deleteGeofenceAction,
   purgeTelemetryAction,
   revokeDeviceAction,
-  deleteGeofenceAction,
   toggleGeofenceAction,
+  updateGeofenceAction,
 } from "@/lib/actions/tracking";
 import ActionButton from "@/components/ActionButton";
+import EditDialog from "@/components/forms/EditDialog";
 import AutoForm from "@/components/forms/AutoForm";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { formatDateTime, num, relativeTime } from "@/lib/utils";
@@ -218,6 +220,62 @@ export default async function TrackingPage() {
                         {(canEdit || canDelete) && (
                           <td>
                             <div className="flex items-start gap-1">
+                              {canEdit && (
+                                <EditDialog
+                                  title={`Edit ${f.name}`}
+                                  action={updateGeofenceAction}
+                                  hidden={{ geofenceId: f.id }}
+                                  fields={[
+                                    { name: "name", label: "Name", required: true, defaultValue: f.name },
+                                    {
+                                      name: "kind",
+                                      label: "Kind",
+                                      type: "select",
+                                      required: true,
+                                      defaultValue: f.kind,
+                                      options: [
+                                        "office",
+                                        "territory",
+                                        "client",
+                                        "warehouse",
+                                        "route",
+                                        "restricted",
+                                      ].map((k) => ({ value: k, label: k })),
+                                    },
+                                    {
+                                      name: "centerLat",
+                                      lngName: "centerLng",
+                                      radiusName: "radiusMeters",
+                                      label: "Centre",
+                                      type: "location",
+                                      required: true,
+                                      defaultValue: f.center_lat,
+                                      defaultLng: f.center_lng,
+                                    },
+                                    {
+                                      name: "radiusMeters",
+                                      label: "Radius (m)",
+                                      type: "number",
+                                      min: 20,
+                                      max: 500000,
+                                      required: true,
+                                      defaultValue: f.radius_meters,
+                                    },
+                                    {
+                                      name: "alertOnEnter",
+                                      label: "Alert on entry",
+                                      type: "checkbox",
+                                      defaultValue: f.alert_on_enter,
+                                    },
+                                    {
+                                      name: "alertOnExit",
+                                      label: "Alert on exit",
+                                      type: "checkbox",
+                                      defaultValue: f.alert_on_exit,
+                                    },
+                                  ]}
+                                />
+                              )}
                               {canEdit && (
                                 <ActionButton
                                   action={toggleGeofenceAction}

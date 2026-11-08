@@ -9,6 +9,7 @@ import { zonedToSql } from "@/lib/utils";
 import { distanceMeters } from "@/lib/geo";
 import { nextDocNumber } from "@/lib/sequence";
 import { audit, notify } from "@/lib/audit";
+import { countOf, stillInUse } from "@/lib/guards";
 import type { ActionState } from "@/lib/types";
 
 const nullable = (max = 200) =>
@@ -472,4 +473,106 @@ export async function checkOutVisitAction(
   });
   revalidatePath("/field-visits");
   return { success: "Visit closed and logged against the client." };
+}
+
+/* --- clients: edit and remove -------------------------------------------- */
+
+const editClientSchema = clientSchema.extend({ clientId: z.string().uuid() });
+
+export async function updateClientAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("crm", "edit");
+  const parsed = editClientSchema.safeParse({
+    clientId: formData.get("clientId"),
+    name: formData.get("name") ?? "",
+    industry: formData.get("industry") ?? "",
+    contactPerson: formData.get("contactPerson") ?? "",
+    email: formData.get("email") ?? "",
+    phone: formData.get("phone") ?? "",
+    address: formData.get("address") ?? "",
+    latitude: formData.get("latitude") ?? "",
+    longitude: formData.get("longitude") ?? "",
+    status: formData.get("status") || "lead",
+    source: formData.get("source") ?? "",
+    ownerId: formData.get("ownerId") ?? "",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const c = parsed.data;
+  const db = await getDb();
+
+  if (c.ownerId) {
+    const owned = await db`
+      SELECT 1 FROM users WHERE id = ${c.ownerId} AND tenant_id = ${user.tenant_id}
+    `;
+    if (owned.length === 0) return { error: "Invalid owner." };
+  }
+
+  const updated = await db`
+    UPDATE clients
+       SET name = ${c.name}, industry = ${c.industry}, contact_person = ${c.contactPerson},
+           email = ${c.email}, phone = ${c.phone}, address = ${c.address},
+           latitude = ${c.latitude}, longitude = ${c.longitude},
+           status = ${c.status}, source = ${c.source}, owner_id = ${c.ownerId}
+     WHERE id = ${c.clientId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Client not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "client.updated",
+    entity: "client",
+    entityId: c.clientId,
+    summary: `Updated client ${c.name}`,
+  });
+  revalidatePath("/clients");
+  return { success: "Client updated." };
+}
+
+export async function deleteClientAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("crm", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  // Deals and activities cascade, invoices and visits detach. Both are the
+  // wrong outcome for a client anybody has actually traded with.
+  const [deals, invoices, visits] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM deals WHERE tenant_id = ${user.tenant_id} AND client_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM invoices WHERE tenant_id = ${user.tenant_id} AND client_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM field_visits WHERE tenant_id = ${user.tenant_id} AND client_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(deals), label: "deal" },
+      { n: countOf(invoices), label: "invoice" },
+      { n: countOf(visits), label: "field visit" },
+    ],
+    'Set the client to "churned" instead — the history stays and they drop out of the active list.'
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM clients WHERE id = ${id} AND tenant_id = ${user.tenant_id} RETURNING name
+  `;
+  if (gone.length === 0) return { error: "Client not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "client.deleted",
+    entity: "client",
+    entityId: id,
+    summary: `Deleted client ${(gone[0] as { name: string }).name}, which had no history`,
+  });
+  revalidatePath("/clients");
+  return { success: "Client deleted." };
 }

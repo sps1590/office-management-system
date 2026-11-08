@@ -7,6 +7,7 @@ import { hasPermission, requirePermission } from "@/lib/permissions";
 import { getDb } from "@/lib/db";
 import { postJournal } from "@/lib/ledger";
 import { audit, notify, notifyRoles } from "@/lib/audit";
+import { countOf, stillInUse } from "@/lib/guards";
 import { isoDate, zonedToSql } from "@/lib/utils";
 import type { ActionState } from "@/lib/types";
 
@@ -625,4 +626,128 @@ export async function completeMaintenanceAction(
   revalidatePath("/fleet/maintenance");
   revalidatePath("/fleet");
   return { success: "Maintenance closed." };
+}
+
+/* --- editing and retiring a vehicle --------------------------------------- */
+
+export async function updateVehicleAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("fleet", "edit");
+  const parsed = vehicleSchema.extend({ vehicleId: z.string().uuid() }).safeParse({
+    vehicleId: formData.get("vehicleId"),
+    registrationNumber: formData.get("registrationNumber") ?? "",
+    make: formData.get("make") ?? "",
+    model: formData.get("model") ?? "",
+    year: formData.get("year") ?? "",
+    vehicleType: formData.get("vehicleType") || "car",
+    fuelType: formData.get("fuelType") || "diesel",
+    seatingCapacity: formData.get("seatingCapacity") ?? "",
+    currentOdometer: formData.get("currentOdometer") || 0,
+    assignedDriverId: formData.get("assignedDriverId") ?? "",
+    insuranceExpiry: formData.get("insuranceExpiry") ?? "",
+    fitnessExpiry: formData.get("fitnessExpiry") ?? "",
+    taxTokenExpiry: formData.get("taxTokenExpiry") ?? "",
+    notes: formData.get("notes") ?? "",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const db = await getDb();
+
+  const clash = await db`
+    SELECT 1 FROM vehicles
+     WHERE tenant_id = ${user.tenant_id} AND registration_number = ${d.registrationNumber}
+       AND id <> ${d.vehicleId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { registrationNumber: ["Another vehicle has that registration."] } };
+  }
+  if (d.assignedDriverId) {
+    const owned = await db`
+      SELECT 1 FROM users WHERE id = ${d.assignedDriverId} AND tenant_id = ${user.tenant_id}
+    `;
+    if (owned.length === 0) return { error: "Invalid driver." };
+  }
+
+  /*
+     The odometer only ever goes up. Closing a trip writes it from the
+     reading the driver entered, and a typo here that moved it backwards
+     would make the next trip's distance negative and its fuel cost
+     nonsense.
+  */
+  const updated = await db`
+    UPDATE vehicles
+       SET registration_number = ${d.registrationNumber}, make = ${d.make},
+           model = ${d.model}, year = ${d.year}, vehicle_type = ${d.vehicleType},
+           fuel_type = ${d.fuelType}, seating_capacity = ${d.seatingCapacity},
+           current_odometer = GREATEST(current_odometer, ${d.currentOdometer}),
+           assigned_driver_id = ${d.assignedDriverId},
+           insurance_expiry = ${d.insuranceExpiry}, fitness_expiry = ${d.fitnessExpiry},
+           tax_token_expiry = ${d.taxTokenExpiry}, notes = ${d.notes}
+     WHERE id = ${d.vehicleId} AND tenant_id = ${user.tenant_id}
+    RETURNING registration_number
+  `;
+  if (updated.length === 0) return { error: "Vehicle not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "vehicle.updated",
+    entity: "vehicle",
+    entityId: d.vehicleId,
+    summary: `Updated vehicle ${d.registrationNumber}`,
+  });
+  revalidatePath("/fleet");
+  return { success: "Vehicle updated." };
+}
+
+export async function deleteVehicleAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("fleet", "edit");
+  const id = String(formData.get("id") ?? "");
+  if (!z.string().uuid().safeParse(id).success) return { error: "Invalid request." };
+  const db = await getDb();
+
+  /*
+     Bookings, trips and maintenance all cascade. Deleting a vehicle that has
+     been driven would erase its entire running history — including the fuel
+     and toll costs already posted to the ledger, which would then reference
+     a journey that no longer exists.
+  */
+  const [bookings, trips, services] = await Promise.all([
+    db`SELECT COUNT(*)::int AS n FROM vehicle_bookings WHERE tenant_id = ${user.tenant_id} AND vehicle_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM trip_logs WHERE tenant_id = ${user.tenant_id} AND vehicle_id = ${id}`,
+    db`SELECT COUNT(*)::int AS n FROM vehicle_maintenance WHERE tenant_id = ${user.tenant_id} AND vehicle_id = ${id}`,
+  ]);
+  const blocked = stillInUse(
+    [
+      { n: countOf(bookings), label: "booking" },
+      { n: countOf(trips), label: "trip" },
+      { n: countOf(services), label: "maintenance record" },
+    ],
+    "Set its status to disposed instead: the running history and its costs stay in the accounts."
+  );
+  if (blocked) return { error: blocked };
+
+  const gone = await db`
+    DELETE FROM vehicles WHERE id = ${id} AND tenant_id = ${user.tenant_id}
+    RETURNING registration_number
+  `;
+  if (gone.length === 0) return { error: "Vehicle not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "vehicle.deleted",
+    entity: "vehicle",
+    entityId: id,
+    summary: `Deleted vehicle ${(gone[0] as { registration_number: string }).registration_number}, never driven`,
+  });
+  revalidatePath("/fleet");
+  return { success: "Vehicle deleted." };
 }

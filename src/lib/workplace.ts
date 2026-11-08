@@ -259,7 +259,7 @@ export async function listAssets(
     SELECT a.id, a.asset_tag, a.name, a.category, a.serial_number, a.assigned_to,
            a.purchase_date, a.purchase_cost::float AS purchase_cost,
            a.current_value::float AS current_value, a.warranty_expiry,
-           a.condition, a.status, a.location,
+           a.condition, a.status, a.location, a.department_id,
            u.full_name AS assigned_to_name, d.name AS department_name
       FROM assets a
       LEFT JOIN users u       ON u.id = a.assigned_to
@@ -277,6 +277,7 @@ export async function listAssets(
     category: string | null;
     serial_number: string | null;
     assigned_to: string | null;
+    department_id: string | null;
     purchase_date: string | null;
     purchase_cost: number | null;
     current_value: number | null;
@@ -382,7 +383,8 @@ export async function taskStats(tenantId: string, userId: string, timeZone: stri
 export async function listProjects(tenantId: string) {
   const db = await getDb();
   const rows = await db`
-    SELECT p.id, p.name, p.code, p.status, p.start_date, p.end_date,
+    SELECT p.id, p.name, p.code, p.description, p.owner_id, p.status,
+           p.start_date, p.end_date,
            o.full_name AS owner_name,
            (SELECT COUNT(*)::int FROM tasks t WHERE t.project_id = p.id) AS task_count,
            (SELECT COUNT(*)::int FROM tasks t
@@ -396,6 +398,8 @@ export async function listProjects(tenantId: string) {
     id: string;
     name: string;
     code: string | null;
+    description: string | null;
+    owner_id: string | null;
     status: string;
     start_date: string | null;
     end_date: string | null;

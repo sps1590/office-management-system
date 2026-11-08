@@ -28,6 +28,7 @@ export default function ActionButton({
   pendingLabel,
   confirm,
   icon,
+  title,
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   values: Record<string, string>;
@@ -37,6 +38,8 @@ export default function ActionButton({
   /** When set, the browser asks this before submitting. */
   confirm?: string;
   icon?: React.ReactNode;
+  /** The accessible name when `label` is empty and only an icon shows. */
+  title?: string;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev: ActionState, formData: FormData) => {
@@ -58,7 +61,7 @@ export default function ActionButton({
         {Object.entries(values).map(([k, v]) => (
           <input key={k} type="hidden" name={k} value={v} />
         ))}
-        <SubmitButton className={className} pendingLabel={pendingLabel}>
+        <SubmitButton className={className} pendingLabel={pendingLabel} label={title}>
           {icon}
           {label}
         </SubmitButton>

@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { AlertTriangle, Laptop, Wrench } from "lucide-react";
+import { AlertTriangle, Laptop, Trash2, Wrench } from "lucide-react";
 import { hasPermission, requirePermission } from "@/lib/permissions";
 import { assetStats, listAssets } from "@/lib/workplace";
 import { listDepartments, pickableUsers } from "@/lib/employees";
-import { assignAssetAction, createAssetAction } from "@/lib/actions/workplace";
+import {
+  assignAssetAction,
+  createAssetAction,
+  deleteAssetAction,
+  updateAssetAction,
+} from "@/lib/actions/workplace";
+import ActionButton from "@/components/ActionButton";
 import AutoForm from "@/components/forms/AutoForm";
+import EditDialog from "@/components/forms/EditDialog";
 import FilterBar from "@/components/FilterBar";
 import { Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "@/components/ui";
 import { addDays, compact, formatDate, isoDate, money } from "@/lib/utils";
@@ -95,6 +102,7 @@ export default async function AssetsPage({
                       <th>Warranty</th>
                       <th className="right">Value</th>
                       <th>Status</th>
+                      {canEdit && <th></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -132,6 +140,89 @@ export default async function AssetsPage({
                           <td>
                             <StatusBadge status={a.status} />
                           </td>
+                          {canEdit && (
+                            <td>
+                              <span className="flex items-center gap-0.5">
+                                <EditDialog
+                                  title={`Edit ${a.name}`}
+                                  action={updateAssetAction}
+                                  hidden={{ assetId: a.id }}
+                                  fields={[
+                                    { name: "name", label: "Name", required: true, defaultValue: a.name },
+                                    { name: "assetTag", label: "Asset tag", defaultValue: a.asset_tag },
+                                    { name: "category", label: "Category", defaultValue: a.category ?? "" },
+                                    {
+                                      name: "serialNumber",
+                                      label: "Serial number",
+                                      defaultValue: a.serial_number ?? "",
+                                    },
+                                    {
+                                      name: "assignedTo",
+                                      label: "Held by",
+                                      type: "select",
+                                      defaultValue: a.assigned_to ?? "",
+                                      options: [
+                                        { value: "", label: "In store" },
+                                        ...people.map((pp) => ({ value: pp.id, label: pp.full_name })),
+                                      ],
+                                    },
+                                    {
+                                      name: "departmentId",
+                                      label: "Department",
+                                      type: "select",
+                                      defaultValue: a.department_id ?? "",
+                                      options: [
+                                        { value: "", label: "None" },
+                                        ...departments.map((dd) => ({ value: dd.id, label: dd.name })),
+                                      ],
+                                    },
+                                    {
+                                      name: "condition",
+                                      label: "Condition",
+                                      type: "select",
+                                      required: true,
+                                      defaultValue: a.condition,
+                                      options: ["new", "good", "fair", "poor", "damaged"].map((v) => ({
+                                        value: v,
+                                        label: v,
+                                      })),
+                                    },
+                                    {
+                                      name: "purchaseDate",
+                                      label: "Purchased",
+                                      type: "date",
+                                      defaultValue: a.purchase_date ?? "",
+                                    },
+                                    {
+                                      name: "purchaseCost",
+                                      label: "Purchase cost",
+                                      type: "number",
+                                      min: 0,
+                                      step: "0.01",
+                                      defaultValue: a.purchase_cost ?? 0,
+                                    },
+                                    {
+                                      name: "warrantyExpiry",
+                                      label: "Warranty ends",
+                                      type: "date",
+                                      defaultValue: a.warranty_expiry ?? "",
+                                    },
+                                    { name: "location", label: "Location", defaultValue: a.location ?? "" },
+                                  ]}
+                                  columns={2}
+                                />
+                                <ActionButton
+                                  action={deleteAssetAction}
+                                  values={{ id: a.id }}
+                                  label=""
+                                  title={`Delete ${a.name}`}
+                                  className="btn-ghost btn-icon"
+                                  icon={<Trash2 size={14} />}
+                                  confirm={`Delete ${a.name}? This only works while it has never been assigned to anybody.`}
+                                />
+                              </span>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

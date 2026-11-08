@@ -335,3 +335,65 @@ export async function enrolBrowserAction(): Promise<{
     return { error: "Could not start tracking. Try again." };
   }
 }
+
+/**
+ * Edits a geofence, centre and radius included.
+ *
+ * Until now a fence that was put in the wrong place had to be deleted and
+ * drawn again, which also dropped every assignment to it — and, where it was
+ * the only fence, could leave a company with geofenced check-in switched on
+ * and nothing to satisfy it.
+ */
+export async function updateGeofenceAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("tracking", "edit");
+  const parsed = geofenceSchema.safeParse({
+    name: formData.get("name") ?? "",
+    kind: formData.get("kind") || "office",
+    centerLat: formData.get("centerLat") || 0,
+    centerLng: formData.get("centerLng") || 0,
+    radiusMeters: formData.get("radiusMeters") || 200,
+    color: formData.get("color") || "#6366f1",
+    alertOnEnter: formData.get("alertOnEnter") === "on",
+    alertOnExit: formData.get("alertOnExit") === "on",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const geofenceId = String(formData.get("geofenceId") ?? "");
+  if (!z.string().uuid().safeParse(geofenceId).success) return { error: "Invalid request." };
+  const d = parsed.data;
+  const db = await getDb();
+
+  const clash = await db`
+    SELECT 1 FROM geofences
+     WHERE tenant_id = ${user.tenant_id} AND name = ${d.name} AND id <> ${geofenceId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { name: ["Another geofence already has that name."] } };
+  }
+
+  const updated = await db`
+    UPDATE geofences
+       SET name = ${d.name}, kind = ${d.kind}, center_lat = ${d.centerLat},
+           center_lng = ${d.centerLng}, radius_meters = ${d.radiusMeters},
+           color = ${d.color ?? "#6366f1"}, alert_on_enter = ${d.alertOnEnter ?? false},
+           alert_on_exit = ${d.alertOnExit ?? false}
+     WHERE id = ${geofenceId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Geofence not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "geofence.updated",
+    entity: "geofence",
+    entityId: geofenceId,
+    summary: `Updated ${d.kind} geofence ${d.name} (${d.radiusMeters} m)`,
+  });
+  revalidatePath("/tracking");
+  return { success: "Geofence updated." };
+}

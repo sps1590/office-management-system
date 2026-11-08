@@ -227,3 +227,69 @@ export async function assignShiftAction(
       : `${name} follows the company default again.`,
   };
 }
+
+/**
+ * Edits a shift in place.
+ *
+ * Its working days come from the same repeated `workDay` checkboxes the
+ * create form posts, so a shift can be moved off the weekend without being
+ * deleted and rebuilt — which would unassign everybody on it, since
+ * `users.shift_id` is ON DELETE SET NULL.
+ */
+export async function updateShiftAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requirePermission("settings", "edit");
+  const parsed = shiftSchema.extend({ shiftId: z.string().uuid() }).safeParse({
+    shiftId: formData.get("shiftId"),
+    name: formData.get("name"),
+    startTime: formData.get("startTime"),
+    endTime: formData.get("endTime"),
+    breakMinutes: formData.get("breakMinutes") || 0,
+    graceMinutes: formData.get("graceMinutes") ?? "",
+  });
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+  const d = parsed.data;
+  const days = formData
+    .getAll("workDay")
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  if (days.length === 0) {
+    return { error: "Tick at least one working day, or nobody on this shift ever works." };
+  }
+
+  const db = await getDb();
+  const clash = await db`
+    SELECT 1 FROM shifts
+     WHERE tenant_id = ${user.tenant_id} AND name = ${d.name} AND id <> ${d.shiftId}
+  `;
+  if (clash.length > 0) {
+    return { fieldErrors: { name: ["Another shift already has that name."] } };
+  }
+
+  const grace = d.graceMinutes === "" || d.graceMinutes === undefined ? null : d.graceMinutes;
+  const updated = await db`
+    UPDATE shifts
+       SET name = ${d.name}, start_time = ${d.startTime}, end_time = ${d.endTime},
+           break_minutes = ${d.breakMinutes}, grace_minutes = ${grace},
+           work_days = ${days}
+     WHERE id = ${d.shiftId} AND tenant_id = ${user.tenant_id}
+    RETURNING name
+  `;
+  if (updated.length === 0) return { error: "Shift not found." };
+
+  await audit({
+    tenantId: user.tenant_id,
+    userId: user.id,
+    action: "shift.updated",
+    entity: "shift",
+    entityId: d.shiftId,
+    summary: `Updated the ${d.name} shift`,
+  });
+  revalidatePath("/settings");
+  revalidatePath("/me");
+  return { success: "Shift updated." };
+}

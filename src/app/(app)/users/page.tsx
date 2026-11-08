@@ -182,7 +182,10 @@ export default async function UsersPage({
               ]}
             />
             <p className="help mt-3">
-              Suspending someone also ends their live sessions immediately.
+              Anything but <em>active</em> ends their live sessions immediately. An
+              employee record is never deleted — their attendance, payslips and
+              approvals all hang off it — so <em>left</em> is how somebody who has
+              gone is recorded, and it can be undone.
             </p>
           </Card>
 
@@ -202,13 +205,19 @@ export default async function UsersPage({
                     .filter((u) => u.id !== user.id)
                     .map((u) => ({ value: u.id, label: `${u.full_name} — ${u.email}` })),
                 },
+                {
+                  name: "password",
+                  label: "New password",
+                  type: "password",
+                  placeholder: "Leave blank to generate one",
+                },
               ]}
             />
             <p className="help mt-3">
-              Shows a temporary password once and signs the person out everywhere. Hand
-              it over directly and ask them to change it on their profile. You cannot
-              reset your own — ask another company admin, so a borrowed unlocked laptop
-              can never take an account over.
+              Type a password to set one you have agreed with them, or leave it blank
+              and one is generated and shown once. Either way every session they have
+              open is signed out. You cannot reset your own — ask another company
+              admin, so a borrowed unlocked laptop can never take an account over.
             </p>
           </Card>
 
